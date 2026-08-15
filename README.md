@@ -54,7 +54,7 @@ curl -X POST http://localhost:3030/dataset/data \
   --data-binary @my_facts.nt
 ```
 
-To build that file from real text instead of hand-writing it, use the companion [causal-discovery](../causal-discovery) repo's `populate_kb_from_text.py` - it extracts a causal graph from a passage and can POST straight to this endpoint.
+To build that file from real text instead of hand-writing it, use the companion [causal-discovery](../causal-discovery) repo's `populate_kb_from_text.py` - it extracts a causal graph from a chunk of text and can POST straight to this endpoint.
 
 ### Clearing it
 
@@ -107,6 +107,7 @@ python -m api.main
 
 - **`TruthAnchor`/`KnowledgeBaseFVL` always returns "not found"**: check the dataset is actually configured (see the `ASK` query above), and check the entities you're querying have `rdfs:label` triples - `KnowledgeBaseFVL` links mention text to KB URIs by label, and a KB of bare `<uri> causes <uri>` triples with no labels will never resolve anything.
 - **`KnowledgeBaseFVL`'s triplet parser is naive**: it does dependency-parse SVO extraction over the LLM's raw answer text. It handles simple declarative sentences ("X causes Y") reliably, but complex phrasing (relative clauses, passive voice, rephrasing) can make it grab the wrong subject/object - this shows up as an unexpected REJECT even when the KB genuinely supports the claim. If you're building an eval prompt, ask for a short declarative answer.
+- **Entity linking is substring-tolerant, which trades false negatives for false positives**: `_link_entity`'s fuzzy match uses `max(ratio, partial_ratio)`, so a short clean phrase (e.g. "habitat destruction") can still link to a much longer KB label that contains it verbatim (e.g. "habitat destruction which in turn leads to biodiversity loss") - useful against KBs with non-atomic, multi-clause labels (common output of `causal-discovery`'s extractor on complex sentences). The flip side: a short or generic entity mention can now spuriously match any long label that happens to contain it as a substring, regardless of whether they're actually the same concept. Prefer specific multi-word claims over single generic words when querying a KB built from non-atomic labels.
 - **Entity linking finds nothing despite having loaded data earlier**: `EntityLinker` (`modules/semantic_parser/parser.py`, used by the FastAPI service path) falls back to a non-persistent in-memory ChromaDB client if it can't reach a ChromaDB server - confirm the `chromadb` service in `docker-compose.yml` is actually running, don't assume the fallback picked up prior data.
 - **Two different spaCy states in this repo**: `modules/semantic_parser/parser.py` (the FastAPI service path) has spaCy NER disabled (`SPACY_AVAILABLE = False`) and runs on dependency-parse pattern matching instead, independent of whatever spaCy install you have - this is a deliberate fallback, not a bug. `experiments/knowledge_base_fvl.py`'s `KnowledgeBaseFVL` (the `CAFLoop`-direct path above) genuinely requires and uses spaCy - install it per [Setup](#setup).
 

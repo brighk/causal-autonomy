@@ -726,7 +726,7 @@ def main():
         help="SPARQL endpoint URL for verification"
     )
     parser.add_argument(
-        "--entity-threshold",
+        "--entity-th",
         type=float,
         default=0.7,
         help="Fuzzy matching threshold for entity linking (0-1)"
