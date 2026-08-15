@@ -1,0 +1,39 @@
+version: '3.8'
+
+# Infra for framework1 (CAF). framework2 needs neither of these services —
+# it has no external KB dependency (see docs/SETUP.md).
+#
+# Usage:
+#   FUSEKI_ADMIN_PASSWORD=changeme docker compose -f framework1/deployment/docker-compose.yml up -d
+#
+# Note on the fuseki service: the mount paths below (/fuseki/databases,
+# /fuseki-base/configuration/assembler.ttl) are specific to the
+# secoresearch/fuseki image's actual layout (verified against v6.2.0) — they
+# do not match that image's own docs, which describe an older /fuseki/... base.
+
+services:
+  fuseki:
+    image: secoresearch/fuseki:latest
+    container_name: llmcause-fuseki
+    ports:
+      - "3030:3030"
+    environment:
+      - ADMIN_PASSWORD=${FUSEKI_ADMIN_PASSWORD:?set FUSEKI_ADMIN_PASSWORD}
+      - JVM_ARGS=-Xmx4g
+    volumes:
+      - fuseki-data:/fuseki/databases
+      - ../config/fuseki/assembler.ttl:/fuseki-base/configuration/assembler.ttl
+    restart: unless-stopped
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: llmcause-chromadb
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma-data:/chroma/chroma
+    restart: unless-stopped
+
+volumes:
+  fuseki-data:
+  chroma-data:

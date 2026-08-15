@@ -1,0 +1,51 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'caf-production'
+    environment: 'production'
+
+scrape_configs:
+  # API Gateway metrics
+  - job_name: 'caf-api'
+    static_configs:
+      - targets: ['api-gateway:8000']
+        labels:
+          service: 'api-gateway'
+          component: 'orchestrator'
+
+  # Inference Engine metrics
+  - job_name: 'caf-inference'
+    static_configs:
+      - targets: ['inference-engine:8001']
+        labels:
+          service: 'inference-engine'
+          component: 'module-a'
+          gpu: 'true'
+
+  # Fuseki metrics (if exposed)
+  - job_name: 'caf-fuseki'
+    static_configs:
+      - targets: ['fuseki:3030']
+        labels:
+          service: 'fuseki'
+          component: 'module-c'
+          database: 'rdf'
+
+  # ChromaDB metrics
+  - job_name: 'caf-chromadb'
+    static_configs:
+      - targets: ['chromadb:8000']
+        labels:
+          service: 'chromadb'
+          component: 'vector-store'
+
+# Alerting rules
+rule_files:
+  - 'alerts.yml'
+
+# Alert manager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []

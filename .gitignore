@@ -1,0 +1,23 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+.env
+.pytest_cache/
+.DS_Store
+
+# model/checkpoint artifacts — never commit these
+*.bin
+*.safetensors
+*.gguf
+*.pt
+
+# local Fuseki/ChromaDB container data if run from this repo
+fuseki-data/
+chroma-data/
+.hf_offload/
+
+# experiment run outputs
+results/
