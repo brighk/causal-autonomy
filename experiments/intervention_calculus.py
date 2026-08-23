@@ -177,6 +177,17 @@ class CausalGraph:
         return patterns
 
 
+def normalize_node_id(text: str) -> str:
+    """
+    Normalize an entity mention/label into a CausalGraph node identifier.
+
+    Used on both sides of graph lookups (query-parsed entity names and
+    KB-derived labels) so they compare equal regardless of surrounding
+    whitespace or casing differences between free text and KB labels.
+    """
+    return " ".join(text.strip().lower().split())
+
+
 def parse_causal_context(context: str) -> CausalGraph:
     """
     Parse causal context into a causal graph.
@@ -189,7 +200,7 @@ def parse_causal_context(context: str) -> CausalGraph:
     pattern = r'(\w+)\s+causes?\s+(\w+)'
     for match in re.finditer(pattern, context, re.IGNORECASE):
         cause, effect = match.groups()
-        graph.add_edge(cause, effect)
+        graph.add_edge(normalize_node_id(cause), normalize_node_id(effect))
 
     return graph
 
@@ -212,28 +223,62 @@ def parse_counterfactual_query(query: str) -> Optional[Dict[str, any]]:
     query_lower = query.lower()
 
     # Pattern 1: "Would X occur if not Y instead of Y?"
-    pattern1 = r'would\s+(\w+)\s+occur\s+if\s+not\s+(\w+)\s+instead\s+of\s+\2'
+    # Entity groups are lazy multi-word matches (not just \w+) so real KB
+    # labels like "habitat destruction" parse as a single entity instead
+    # of just grabbing "habitat".
+    pattern1 = r'would\s+([\w\s]+?)\s+occur\s+if\s+not\s+([\w\s]+?)\s+instead\s+of\s+\2'
     match = re.search(pattern1, query_lower, re.IGNORECASE)
     if match:
         target, intervention_node = match.groups()
         return {
-            'target': target.capitalize(),
-            'intervention_node': intervention_node.capitalize(),
+            'target': normalize_node_id(target),
+            'intervention_node': normalize_node_id(intervention_node),
             'intervention_value': False  # "not X" means setting X to False
         }
 
     # Pattern 2: "Would X happen if we prevent Y?"
-    pattern2 = r'would\s+(\w+)\s+(?:happen|occur)\s+if\s+(?:we\s+)?prevent\s+(\w+)'
+    # The second group is unbounded on the right, so it's anchored to stop
+    # at trailing punctuation/end-of-string rather than eating past the
+    # entity name.
+    pattern2 = r'would\s+([\w\s]+?)\s+(?:happen|occur)\s+if\s+(?:we\s+)?prevent\s+([\w\s]+?)(?:[?.!]|\s*$)'
     match = re.search(pattern2, query_lower, re.IGNORECASE)
     if match:
         target, intervention_node = match.groups()
         return {
-            'target': target.capitalize(),
-            'intervention_node': intervention_node.capitalize(),
+            'target': normalize_node_id(target),
+            'intervention_node': normalize_node_id(intervention_node),
             'intervention_value': False
         }
 
     return None
+
+
+def counterfactual_reasoning_with_graph(query: str, graph: CausalGraph) -> Optional[bool]:
+    """
+    Answer a counterfactual query against an already-built CausalGraph.
+
+    Prefer this over `counterfactual_reasoning` whenever the graph was
+    built directly (e.g. from live SPARQL traversal) rather than from a
+    hand-written "X causes Y" string - it skips re-parsing raw text
+    through `parse_causal_context`'s single-word regex, which would
+    silently mangle multi-word KB labels.
+
+    Args:
+        query: Counterfactual question
+        graph: Pre-built causal graph
+
+    Returns:
+        True (yes), False (no), or None (unknown/unparseable query)
+    """
+    parsed_query = parse_counterfactual_query(query)
+    if not parsed_query:
+        return None
+
+    return graph.would_occur(
+        target=parsed_query['target'],
+        intervention_node=parsed_query['intervention_node'],
+        intervention_value=parsed_query['intervention_value']
+    )
 
 
 def counterfactual_reasoning(query: str, context: str) -> Optional[bool]:
@@ -247,22 +292,8 @@ def counterfactual_reasoning(query: str, context: str) -> Optional[bool]:
     Returns:
         True (yes), False (no), or None (unknown)
     """
-    # Parse query
-    parsed_query = parse_counterfactual_query(query)
-    if not parsed_query:
-        return None
-
-    # Build causal graph from context
     graph = parse_causal_context(context)
-
-    # Answer using do-calculus
-    result = graph.would_occur(
-        target=parsed_query['target'],
-        intervention_node=parsed_query['intervention_node'],
-        intervention_value=parsed_query['intervention_value']
-    )
-
-    return result
+    return counterfactual_reasoning_with_graph(query, graph)
 
 
 def main():

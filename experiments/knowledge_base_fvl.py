@@ -181,6 +181,12 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
 
                 # Also check for compound predicates
                 aux_verbs = [child for child in verb.children if child.dep_ == "aux"]
+                # "not"/"n't" attaches to the verb as a direct "neg" child
+                # (e.g. "does *not* cause"), a sibling of the aux - it's
+                # invisible to the aux_verbs check above and was previously
+                # dropped, silently turning "X does not cause Y" into an
+                # unmarked "X causes Y" triplet.
+                is_negated = any(child.dep_ == "neg" for child in verb.children)
 
                 for obj in objects:
                     # Extract full entity text (noun chunks)
@@ -192,6 +198,8 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
                         predicate = f"{aux_verbs[0].lemma_}_{verb.lemma_}"
                     else:
                         predicate = verb.lemma_
+                    if is_negated:
+                        predicate = f"not_{predicate}"
 
                     # Skip trivial triplets
                     if len(subj_text) < 2 or len(obj_text) < 2:
@@ -238,7 +246,8 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
     def verify(
         self,
         triplets: List[RDFTriplet],
-        knowledge_base: Any = None  # Not used, kept for interface compatibility
+        knowledge_base: Any = None,  # Not used, kept for interface compatibility
+        query: Optional[str] = None  # Not used here; consumed by subclasses (e.g. KnowledgeBaseFVLWithIntervention)
     ) -> List[VerificationResult]:
         """
         Verify triplets against knowledge base via SPARQL.
@@ -253,6 +262,8 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
         Args:
             triplets: List of RDF triplets to verify
             knowledge_base: Unused (endpoint configured at init)
+            query: Unused here; accepted so CAFLoop can call every FVL
+                implementation with the same signature
 
         Returns:
             List of verification results
@@ -285,8 +296,16 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
                 confidence_score=0.0
             )
 
-        # Step 2: Construct and execute SPARQL query
-        query = self._build_ask_query(subj_mapping.uri, triplet.predicate, obj_mapping.uri)
+        # `parse` prefixes the predicate with "not_" for a negated claim
+        # (e.g. "X does not cause Y") - recover the underlying verb so KB
+        # predicate mapping and the ASK query below still target the real
+        # relation, then interpret the query result according to which
+        # case we're in.
+        is_negated, base_predicate = self._split_negation(triplet.predicate)
+
+        # Step 2: Construct and execute SPARQL query for the underlying
+        # (unnegated) relation.
+        query = self._build_ask_query(subj_mapping.uri, base_predicate, obj_mapping.uri)
         query_result = self._execute_sparql_query(query)
 
         if not query_result.success:
@@ -300,9 +319,33 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
             )
 
         # Step 3: Interpret results
-        is_verified = query_result.result.get("boolean", False)
+        positive_relation_found = query_result.result.get("boolean", False)
 
-        if is_verified:
+        if is_negated:
+            # "X does not cause Y": the KB *having* that positive edge
+            # contradicts the claim; not having it - given both entities
+            # already linked to real KB concepts above - supports it.
+            if positive_relation_found:
+                return VerificationResult(
+                    triplet=triplet,
+                    status=VerificationStatus.CONTRADICTION,
+                    kb_support=False,
+                    contradiction_found=True,
+                    contradicting_facts=[f"{subj_mapping.uri} -> {obj_mapping.uri} found in KB"],
+                    confidence_score=0.0
+                )
+            return VerificationResult(
+                triplet=triplet,
+                status=VerificationStatus.VERIFIED,
+                kb_support=True,
+                contradiction_found=False,
+                supporting_facts=[
+                    f"no {base_predicate} edge {subj_mapping.uri} -> {obj_mapping.uri} in KB"
+                ],
+                confidence_score=min(subj_mapping.confidence, obj_mapping.confidence)
+            )
+
+        if positive_relation_found:
             return VerificationResult(
                 triplet=triplet,
                 status=VerificationStatus.VERIFIED,
@@ -315,7 +358,7 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
         # Step 4: Check for contradiction
         contradiction_found = self._check_contradiction(
             subj_mapping.uri,
-            triplet.predicate,
+            base_predicate,
             obj_mapping.uri
         )
 
@@ -331,7 +374,7 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
 
         # Step 5: Try fuzzy match for partial verification
         if self.enable_fuzzy_match:
-            fuzzy_score = self._fuzzy_verify(subj_mapping.uri, triplet.predicate, obj_mapping.uri)
+            fuzzy_score = self._fuzzy_verify(subj_mapping.uri, base_predicate, obj_mapping.uri)
             if fuzzy_score > 0.5:
                 return VerificationResult(
                     triplet=triplet,
@@ -349,6 +392,14 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
             contradiction_found=False,
             confidence_score=0.0
         )
+
+    def _split_negation(self, predicate: str) -> Tuple[bool, str]:
+        """Split a `parse()`-produced "not_"-prefixed predicate into
+        (is_negated, base_predicate), so KB predicate mapping and query
+        construction always operate on the plain verb."""
+        if predicate.startswith("not_"):
+            return True, predicate[len("not_"):]
+        return False, predicate
 
     def _link_entity(self, entity_text: str) -> Optional[EntityMapping]:
         """
@@ -433,6 +484,33 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
             return uri
 
         return None
+
+    def _resolve_label(self, uri: str) -> Optional[str]:
+        """
+        Resolve a KB URI back to a human-readable label (reverse of
+        `_exact_entity_match`'s label->URI lookup).
+
+        Falls back to the URI's local name (after '#' or the last '/') if
+        the KB has no rdfs:label/skos:prefLabel for it.
+        """
+        query = f"""
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+
+        SELECT ?label WHERE {{
+            {{ <{uri}> rdfs:label ?label . }}
+            UNION
+            {{ <{uri}> skos:prefLabel ?label . }}
+        }} LIMIT 1
+        """
+
+        result = self._execute_sparql_query(query)
+
+        if result.success and result.result.get("results", {}).get("bindings"):
+            return result.result["results"]["bindings"][0]["label"]["value"]
+
+        local_name = uri.rsplit("#", 1)[-1].rsplit("/", 1)[-1]
+        return local_name or None
 
     def _fuzzy_entity_search(self, entity_text: str) -> Optional[Tuple[str, float]]:
         """
@@ -523,6 +601,15 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
         # Normalize predicate (map common verbs to KB relations)
         kb_predicate = self._map_predicate_to_kb(predicate)
 
+        # Both checks must run case-insensitively: `_map_predicate_to_kb`
+        # returns a capitalized relation name ("Causes"), but real KB
+        # predicate URIs written by causal_discovery.py's exporter are
+        # lowercase (".../causes") - a case-sensitive CONTAINS against
+        # STR(?p) silently never matches, so every query fell through to
+        # the raw-predicate fallback, which itself only matches by luck
+        # (e.g. "cause" is a substring of "causes", but "do_cause" - what
+        # an auxiliary-verb phrasing like "does cause"/"does not cause"
+        # produces - never is).
         query = f"""
         PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -530,8 +617,8 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
         ASK {{
             <{subject_uri}> ?p <{object_uri}> .
             FILTER(
-                CONTAINS(STR(?p), "{kb_predicate}") ||
-                CONTAINS(LCASE(STR(?p)), "{predicate}")
+                CONTAINS(LCASE(STR(?p)), "{kb_predicate.lower()}") ||
+                CONTAINS(LCASE(STR(?p)), "{predicate.lower()}")
             )
         }}
         """

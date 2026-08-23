@@ -2,7 +2,7 @@
 Pydantic models for strict type validation of CAF data packets.
 """
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field
 from datetime import datetime
 
 

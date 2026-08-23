@@ -70,11 +70,11 @@ The minimal path - no FastAPI service, just `CAFLoop` directly against a real LL
 
 ```python
 from experiments.caf_algorithm import CAFLoop, CAFConfig
-from experiments.knowledge_base_fvl import KnowledgeBaseFVL
+from experiments.kb_fvl_with_intervention import KnowledgeBaseFVLWithIntervention
 from common.llm_integration import HuggingFaceCausalLMLayer, LLMConfig
 
 llm = HuggingFaceCausalLMLayer(LLMConfig(model_name="Qwen/Qwen3-14B", load_in_4bit=True, trust_remote_code=True))
-verifier = KnowledgeBaseFVL(sparql_endpoint="http://localhost:3030/dataset/query")
+verifier = KnowledgeBaseFVLWithIntervention(sparql_endpoint="http://localhost:3030/dataset/query")
 
 caf_loop = CAFLoop(
     config=CAFConfig(max_iterations=3, verification_threshold=0.8),
@@ -85,6 +85,8 @@ caf_loop = CAFLoop(
 output = caf_loop.execute("Does water pooling cause mold growth?")
 print(output.final_response, output.decision, output.final_score)
 ```
+
+`KnowledgeBaseFVLWithIntervention` (`experiments/kb_fvl_with_intervention.py`) is a strict superset of `KnowledgeBaseFVL`: for a factual question it verifies via SPARQL exactly like the plain class, but if the question looks counterfactual ("Would X occur if we prevented Y?") it instead builds a causal graph by walking causal-predicate edges outward from the mentioned entities in the same live KB, and answers via Pearl's do-calculus (`experiments/intervention_calculus.py`) - no extra setup required when driving it through `CAFLoop` this way. Plain `KnowledgeBaseFVL` is still there for callers that only ever ask factual questions.
 
 Or run the CounterBench benchmark harness:
 
@@ -110,6 +112,7 @@ python -m api.main
 - **Entity linking is substring-tolerant, which trades false negatives for false positives**: `_link_entity`'s fuzzy match uses `max(ratio, partial_ratio)`, so a short clean phrase (e.g. "habitat destruction") can still link to a much longer KB label that contains it verbatim (e.g. "habitat destruction which in turn leads to biodiversity loss") - useful against KBs with non-atomic, multi-clause labels (common output of `causal-discovery`'s extractor on complex sentences). The flip side: a short or generic entity mention can now spuriously match any long label that happens to contain it as a substring, regardless of whether they're actually the same concept. Prefer specific multi-word claims over single generic words when querying a KB built from non-atomic labels.
 - **Entity linking finds nothing despite having loaded data earlier**: `EntityLinker` (`modules/semantic_parser/parser.py`, used by the FastAPI service path) falls back to a non-persistent in-memory ChromaDB client if it can't reach a ChromaDB server - confirm the `chromadb` service in `docker-compose.yml` is actually running, don't assume the fallback picked up prior data.
 - **Two different spaCy states in this repo**: `modules/semantic_parser/parser.py` (the FastAPI service path) has spaCy NER disabled (`SPACY_AVAILABLE = False`) and runs on dependency-parse pattern matching instead, independent of whatever spaCy install you have - this is a deliberate fallback, not a bug. `experiments/knowledge_base_fvl.py`'s `KnowledgeBaseFVL` (the `CAFLoop`-direct path above) genuinely requires and uses spaCy - install it per [Setup](#setup).
+- **`KnowledgeBaseFVLWithIntervention` silently falls back to plain SPARQL** if it can't link the question's entities to the KB, or finds no causal-predicate edges within `causal_graph_max_hops` (default 2) hops of them - a real counterfactual question can come back as an ordinary factual FAILED/PARTIAL instead of a do-calculus VERIFIED/CONTRADICTION if the relevant chain is more than 2 hops away. Increase `causal_graph_max_hops` if your KB's causal chains are longer, at the cost of more SPARQL round-trips per verification.
 
 ## License
 

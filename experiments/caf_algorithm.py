@@ -159,9 +159,15 @@ class FormalVerificationLayer(ABC):
     def verify(
         self,
         triplets: List[RDFTriplet],
-        knowledge_base: Any
+        knowledge_base: Any,
+        query: Optional[str] = None
     ) -> List[VerificationResult]:
-        """Verify triplets against knowledge base via SPARQL."""
+        """Verify triplets against knowledge base via SPARQL.
+
+        `query` is the original prompt/question being answered, passed
+        through so implementations that need it (e.g. counterfactual
+        detection) don't require a separate out-of-band setter call.
+        """
         pass
 
 
@@ -483,7 +489,7 @@ class CAFLoop:
             if isinstance(self.fvl, SimulatedFVL):
                 results = self.fvl.verify(triplets, knowledge_base, accuracy_hint)
             else:
-                results = self.fvl.verify(triplets, knowledge_base)
+                results = self.fvl.verify(triplets, knowledge_base, query=prompt)
 
             # Compute score
             score = self.compute_score(results)
@@ -569,7 +575,7 @@ class CAFLoop:
         if isinstance(self.fvl, SimulatedFVL):
             results = self.fvl.verify(triplets, knowledge_base, accuracy_hint)
         else:
-            results = self.fvl.verify(triplets, knowledge_base)
+            results = self.fvl.verify(triplets, knowledge_base, query=prompt)
 
         score = self.compute_score(results)
         baseline_duration = (time.time() - baseline_start) * 1000
