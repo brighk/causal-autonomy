@@ -32,14 +32,6 @@ scrape_configs:
           component: 'module-c'
           database: 'rdf'
 
-  # ChromaDB metrics
-  - job_name: 'caf-chromadb'
-    static_configs:
-      - targets: ['chromadb:8000']
-        labels:
-          service: 'chromadb'
-          component: 'vector-store'
-
 # Alerting rules
 rule_files:
   - 'alerts.yml'

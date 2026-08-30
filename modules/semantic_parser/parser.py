@@ -5,13 +5,13 @@ Task: Text-to-SPARQL mapping via entity extraction and linking
 
 Protocol:
 1. Extract entities using spaCy NER
-2. Link entities to Wikidata/ConceptNet URIs using vector similarity
+2. Link entities to KB URIs via Fuseki label lookup (exact, then fuzzy)
 3. Construct SPARQL query using templates
 """
+from dataclasses import dataclass
+from difflib import SequenceMatcher
 from typing import List, Dict, Any, Optional, Tuple
-from sentence_transformers import SentenceTransformer
-import chromadb
-from chromadb.config import Settings
+from SPARQLWrapper import SPARQLWrapper, JSON
 from loguru import logger
 import re
 
@@ -24,95 +24,198 @@ except ImportError:
     spacy = None
     SPACY_AVAILABLE = False
 
+try:
+    from fuzzywuzzy import fuzz
+except ImportError:
+    fuzz = None
+
+
+@dataclass
+class EntityMapping:
+    """Entity text mapped to KB URI with confidence."""
+    text: str
+    uri: str
+    confidence: float
+    method: str  # exact, fuzzy
+
 
 class EntityLinker:
-    """Links entities to knowledge base URIs using semantic similarity"""
+    """
+    Links entity mentions to KB URIs by querying Fuseki's own rdfs:label /
+    skos:prefLabel triples directly - no separate index to keep in sync.
+    """
 
-    def __init__(self, chromadb_host: str = "localhost", chromadb_port: int = 8000):
-        self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+    def __init__(
+        self,
+        fuseki_endpoint: str = "http://localhost:3030/dataset/query",
+        entity_threshold: float = 0.7,
+        enable_fuzzy_match: bool = True,
+        fuzzy_match_limit: int = 10,
+        cache_size: int = 1000,
+    ):
+        self.sparql = SPARQLWrapper(fuseki_endpoint)
+        self.sparql.setReturnFormat(JSON)
+        self.entity_threshold = entity_threshold
+        self.enable_fuzzy_match = enable_fuzzy_match
+        self.fuzzy_match_limit = fuzzy_match_limit
+        self.cache_size = cache_size
+        self.entity_cache: Dict[str, EntityMapping] = {}
 
-        # Try to connect to ChromaDB with timeout
-        self.chroma_client = None
-        self.entity_collection = None
+        logger.info(f"Entity Linker initialized against {fuseki_endpoint}")
 
-        try:
-            # Try HTTP client first
-            from chromadb import HttpClient
-            import httpx
-            self.chroma_client = HttpClient(
-                host=chromadb_host,
-                port=chromadb_port,
-                settings=Settings(chroma_client_auth_provider="chromadb.auth.token.TokenAuthClientProvider" if False else None)
-            )
-
-            # Test connection with timeout
-            try:
-                self.entity_collection = self.chroma_client.get_collection("entities")
-                logger.info(f"Connected to ChromaDB at {chromadb_host}:{chromadb_port}")
-            except:
-                self.entity_collection = self.chroma_client.create_collection(
-                    name="entities",
-                    metadata={"description": "Entity URI mappings from ConceptNet/Wikidata"}
-                )
-                logger.info(f"Created new ChromaDB collection at {chromadb_host}:{chromadb_port}")
-        except Exception as e:
-            logger.warning(f"Could not connect to ChromaDB server: {e}")
-            logger.info("Using in-memory ChromaDB (entity linking will not persist)")
-            # Fallback to embedded/in-memory ChromaDB
-            try:
-                import chromadb
-                self.chroma_client = chromadb.Client()
-                try:
-                    self.entity_collection = self.chroma_client.get_collection("entities")
-                except:
-                    self.entity_collection = self.chroma_client.create_collection(
-                        name="entities",
-                        metadata={"description": "Entity URI mappings from ConceptNet/Wikidata"}
-                    )
-            except Exception as e2:
-                logger.error(f"Failed to initialize ChromaDB: {e2}")
-
-        logger.info("Entity Linker initialized")
-
-    def link_entity(self, entity_text: str, top_k: int = 3) -> List[Dict[str, Any]]:
+    def link_entity(self, entity_text: str, top_k: int = 1) -> List[Dict[str, Any]]:
         """
-        Find the most similar entity URIs for a given text.
+        Find the best-matching KB URI for a given text.
+
+        `top_k` is accepted for interface compatibility with callers, but
+        only the single best match is ever returned - a Fuseki label lookup
+        isn't a ranked index the way a vector search is.
 
         Returns:
-            List of dicts with 'uri', 'label', 'score'
+            List of at most one dict with 'uri', 'label', 'score', 'source'.
         """
-        # Embed the query
-        query_embedding = self.embedding_model.encode([entity_text]).tolist()
-
-        # Query ChromaDB
-        results = self.entity_collection.query(
-            query_embeddings=query_embedding,
-            n_results=top_k
-        )
-
-        if not results['ids'] or not results['ids'][0]:
+        mapping = self._link_entity(entity_text)
+        if mapping is None:
             return []
 
-        linked_entities = []
-        for i, entity_id in enumerate(results['ids'][0]):
-            linked_entities.append({
-                'uri': entity_id,
-                'label': results['metadatas'][0][i].get('label', entity_id),
-                'score': 1.0 - results['distances'][0][i],  # Convert distance to similarity
-                'source': results['metadatas'][0][i].get('source', 'unknown')
-            })
+        return [{
+            'uri': mapping.uri,
+            'label': mapping.text,
+            'score': mapping.confidence,
+            'source': mapping.method,
+        }]
 
-        return linked_entities
+    def _link_entity(self, entity_text: str) -> Optional[EntityMapping]:
+        """
+        Strategy: check cache, then exact label match, then fuzzy match.
+        """
+        entity_text = entity_text.strip().lower()
+        if not entity_text:
+            return None
 
-    def add_entity(self, uri: str, label: str, source: str = "manual"):
-        """Add a new entity to the vector database"""
-        embedding = self.embedding_model.encode([label]).tolist()
+        if entity_text in self.entity_cache:
+            return self.entity_cache[entity_text]
 
-        self.entity_collection.add(
-            ids=[uri],
-            embeddings=embedding,
-            metadatas=[{"label": label, "source": source}]
-        )
+        exact_uri = self._exact_entity_match(entity_text)
+        if exact_uri:
+            mapping = EntityMapping(text=entity_text, uri=exact_uri, confidence=1.0, method="exact")
+            self._cache_entity(entity_text, mapping)
+            return mapping
+
+        if self.enable_fuzzy_match:
+            fuzzy_result = self._fuzzy_entity_search(entity_text)
+            if fuzzy_result:
+                uri, confidence = fuzzy_result
+                mapping = EntityMapping(text=entity_text, uri=uri, confidence=confidence, method="fuzzy")
+                self._cache_entity(entity_text, mapping)
+                return mapping
+
+        return None
+
+    def _exact_entity_match(self, entity_text: str) -> Optional[str]:
+        """Find exact label match in the KB."""
+        entity_literal = self._sparql_string_literal(entity_text)
+        query = f"""
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+
+        SELECT ?uri WHERE {{
+            {{ ?uri rdfs:label {entity_literal}@en . }}
+            UNION
+            {{ ?uri skos:prefLabel {entity_literal}@en . }}
+            UNION
+            {{ ?uri rdfs:label {entity_literal} . }}
+        }} LIMIT 1
+        """
+
+        bindings = self._execute_sparql_query(query).get("results", {}).get("bindings", [])
+        if bindings:
+            return bindings[0]["uri"]["value"]
+        return None
+
+    def _fuzzy_entity_search(self, entity_text: str) -> Optional[Tuple[str, float]]:
+        """Find similar entities using fuzzy string matching."""
+        first_word = entity_text.split()[0] if entity_text else entity_text
+        if not first_word:
+            return None
+        first_word_literal = self._sparql_string_literal(first_word)
+
+        query = f"""
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+        SELECT ?uri ?label WHERE {{
+            ?uri rdfs:label ?label .
+            FILTER(LANG(?label) = "en" || LANG(?label) = "")
+            FILTER(CONTAINS(LCASE(STR(?label)), {first_word_literal}))
+        }} LIMIT {self.fuzzy_match_limit}
+        """
+
+        bindings = self._execute_sparql_query(query).get("results", {}).get("bindings", [])
+        if not bindings:
+            return None
+
+        best_uri = None
+        best_score = 0.0
+        for binding in bindings:
+            label = binding["label"]["value"].lower()
+            score = self._similarity(entity_text, label)
+            if score > best_score and score >= self.entity_threshold:
+                best_score = score
+                best_uri = binding["uri"]["value"]
+
+        if best_uri:
+            return (best_uri, best_score)
+        return None
+
+    def _similarity(self, a: str, b: str) -> float:
+        """
+        Similarity score that also credits a short, clean phrase for matching
+        *part* of a longer label (e.g. an LLM saying "habitat destruction"
+        against a KB label like "habitat destruction which in turn leads to
+        biodiversity loss" - a full-string ratio penalizes the length gap
+        even though the shorter phrase is an exact match against a prefix).
+        Plain ratio() alone would reject that kind of match well below
+        entity_threshold, so entity linking would silently fail on any KB
+        built from naive, multi-clause text extraction.
+        """
+        if fuzz:
+            return max(fuzz.ratio(a, b), fuzz.partial_ratio(a, b)) / 100.0
+
+        ratio = SequenceMatcher(None, a, b).ratio()
+        shorter, longer = (a, b) if len(a) <= len(b) else (b, a)
+        if not shorter:
+            return ratio
+
+        best_partial = 0.0
+        for i in range(len(longer) - len(shorter) + 1):
+            window = longer[i:i + len(shorter)]
+            best_partial = max(best_partial, SequenceMatcher(None, shorter, window).ratio())
+        return max(ratio, best_partial)
+
+    def _cache_entity(self, entity_text: str, mapping: EntityMapping):
+        """Add entity mapping to cache with simple eviction."""
+        if len(self.entity_cache) >= self.cache_size:
+            self.entity_cache.pop(next(iter(self.entity_cache)))
+        self.entity_cache[entity_text] = mapping
+
+    def _execute_sparql_query(self, query: str) -> Dict[str, Any]:
+        """Execute a SPARQL query against Fuseki; returns {} on failure."""
+        self.sparql.setQuery(query)
+        try:
+            return self.sparql.query().convert()
+        except Exception as e:
+            logger.warning(f"SPARQL query failed: {e}")
+            return {}
+
+    def _sparql_string_literal(self, text: str) -> str:
+        """Escape plain text for safe inclusion as a SPARQL string literal."""
+        value = str(text or "")
+        value = value.replace("\\", "\\\\")
+        value = value.replace('"', '\\"')
+        value = value.replace("\n", "\\n")
+        value = value.replace("\r", "\\r")
+        value = value.replace("\t", "\\t")
+        return f'"{value}"'
 
 
 class SemanticParser:
@@ -121,15 +224,14 @@ class SemanticParser:
 
     Pipeline:
     1. NER with spaCy
-    2. Entity linking with ChromaDB
+    2. Entity linking against Fuseki (label lookup + fuzzy match)
     3. Relation extraction
     4. SPARQL generation
     """
 
     def __init__(
         self,
-        chromadb_host: str = "localhost",
-        chromadb_port: int = 8000,
+        fuseki_endpoint: str = "http://localhost:3030/dataset/query",
         spacy_model: str = "en_core_web_sm"
     ):
         # spaCy is required for triplet extraction - no regex fallback, since a
@@ -148,7 +250,7 @@ class SemanticParser:
             )
 
         # Initialize entity linker
-        self.entity_linker = EntityLinker(chromadb_host, chromadb_port)
+        self.entity_linker = EntityLinker(fuseki_endpoint)
 
         # Predicate templates (common relations)
         self.predicate_templates = {

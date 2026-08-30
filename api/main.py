@@ -49,8 +49,7 @@ async def lifespan(app: FastAPI):
 
     try:
         services['parser'] = SemanticParser(
-            chromadb_host=settings.chromadb_host,
-            chromadb_port=settings.chromadb_port
+            fuseki_endpoint=settings.fuseki_endpoint
         )
         logger.info("✓ Semantic parser initialized")
     except Exception as e:

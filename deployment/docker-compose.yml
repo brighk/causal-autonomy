@@ -25,15 +25,5 @@ services:
       - ../config/fuseki/assembler.ttl:/fuseki-base/configuration/assembler.ttl
     restart: unless-stopped
 
-  chromadb:
-    image: chromadb/chroma:latest
-    container_name: llmcause-chromadb
-    ports:
-      - "8001:8000"
-    volumes:
-      - chroma-data:/chroma/chroma
-    restart: unless-stopped
-
 volumes:
   fuseki-data:
-  chroma-data:

@@ -44,10 +44,6 @@ class Settings(BaseSettings):
         description="Fuseki SPARQL update endpoint"
     )
 
-    # ChromaDB
-    chromadb_host: str = Field(default="localhost", description="ChromaDB host")
-    chromadb_port: int = Field(default=8000, description="ChromaDB port")
-
     # Verification Settings
     verification_threshold: float = Field(
         default=0.8,
