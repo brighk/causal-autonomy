@@ -14,11 +14,10 @@ There are two ways to drive this: the FastAPI service (`api/main.py`, needs a se
 ## Setup
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python -m spacy download en_core_web_sm   # needed by KnowledgeBaseFVL's triplet parser
+uv sync
+uv run python -m spacy download en_core_web_sm   # triplet parsing (modules/semantic_parser, KnowledgeBaseFVL)
 ```
+
 
 ## Running Fuseki
 
@@ -91,7 +90,7 @@ print(output.final_response, output.decision, output.final_score)
 Or run the CounterBench benchmark harness:
 
 ```bash
-python -m experiments.run_counterbench_experiment \
+uv run python -m experiments.run_counterbench_experiment \
   --input <your-dataset>.json \
   --use-llm --llm-model <name> \
   --use-real-sparql \
@@ -102,7 +101,7 @@ python -m experiments.run_counterbench_experiment \
 Or as a live service (needs a separate inference-engine server running too):
 
 ```bash
-python -m api.main
+uv run python -m api.main
 ```
 
 ## Gotchas
@@ -111,7 +110,7 @@ python -m api.main
 - **`KnowledgeBaseFVL`'s triplet parser is naive**: it does dependency-parse SVO extraction over the LLM's raw answer text. It handles simple declarative sentences ("X causes Y") reliably, but complex phrasing (relative clauses, passive voice, rephrasing) can make it grab the wrong subject/object - this shows up as an unexpected REJECT even when the KB genuinely supports the claim. If you're building an eval prompt, ask for a short declarative answer.
 - **Entity linking is substring-tolerant, which trades false negatives for false positives**: `_link_entity`'s fuzzy match uses `max(ratio, partial_ratio)`, so a short clean phrase (e.g. "habitat destruction") can still link to a much longer KB label that contains it verbatim (e.g. "habitat destruction which in turn leads to biodiversity loss") - useful against KBs with non-atomic, multi-clause labels (common output of `causal-discovery`'s extractor on complex sentences). The flip side: a short or generic entity mention can now spuriously match any long label that happens to contain it as a substring, regardless of whether they're actually the same concept. Prefer specific multi-word claims over single generic words when querying a KB built from non-atomic labels.
 - **Entity linking finds nothing despite having loaded data earlier**: `EntityLinker` (`modules/semantic_parser/parser.py`, used by the FastAPI service path) falls back to a non-persistent in-memory ChromaDB client if it can't reach a ChromaDB server - confirm the `chromadb` service in `docker-compose.yml` is actually running, don't assume the fallback picked up prior data.
-- **Two different spaCy states in this repo**: `modules/semantic_parser/parser.py` (the FastAPI service path) has spaCy NER disabled (`SPACY_AVAILABLE = False`) and runs on dependency-parse pattern matching instead, independent of whatever spaCy install you have - this is a deliberate fallback, not a bug. `experiments/knowledge_base_fvl.py`'s `KnowledgeBaseFVL` (the `CAFLoop`-direct path above) genuinely requires and uses spaCy - install it per [Setup](#setup).
+- **`modules/semantic_parser/parser.py` requires spaCy - there is no fallback**: `SemanticParser.__init__` calls `spacy.load(spacy_model)` (default `en_core_web_sm`) and raises `RuntimeError` immediately if spaCy or the model isn't installed, rather than silently parsing with something weaker - a degraded extractor would quietly undermine what `TruthAnchor` is verifying. Install the model per [Setup](#setup). In `api/main.py`, a failed init here surfaces as `services['parser']` being `None` and `/health` reporting `semantic_parser: false`.
 - **`KnowledgeBaseFVLWithIntervention` silently falls back to plain SPARQL** if it can't link the question's entities to the KB, or finds no causal-predicate edges within `causal_graph_max_hops` (default 2) hops of them - a real counterfactual question can come back as an ordinary factual FAILED/PARTIAL instead of a do-calculus VERIFIED/CONTRADICTION if the relevant chain is more than 2 hops away. Increase `causal_graph_max_hops` if your KB's causal chains are longer, at the cost of more SPARQL round-trips per verification.
 
 ## License

@@ -17,10 +17,12 @@ import re
 
 from api.models import Triplet, CausalAssertion
 
-# Optional spacy import - disabled due to version incompatibility
-SPACY_AVAILABLE = False
-spacy = None
-logger.warning("spaCy temporarily disabled due to version incompatibility with thinc")
+try:
+    import spacy
+    SPACY_AVAILABLE = True
+except ImportError:
+    spacy = None
+    SPACY_AVAILABLE = False
 
 
 class EntityLinker:
@@ -128,12 +130,22 @@ class SemanticParser:
         self,
         chromadb_host: str = "localhost",
         chromadb_port: int = 8000,
-        spacy_model: str = "en_core_web_lg"
+        spacy_model: str = "en_core_web_sm"
     ):
-        # Load spaCy model if available
-        self.nlp = None
-        # Temporarily disable spacy due to version incompatibility
-        logger.warning("spaCy NER temporarily disabled - will use pattern matching")
+        # spaCy is required for triplet extraction - no regex fallback, since a
+        # weaker extractor would silently degrade what TruthAnchor verifies.
+        if not SPACY_AVAILABLE:
+            raise RuntimeError(
+                "spaCy is not installed. Run: uv sync"
+            )
+        try:
+            self.nlp = spacy.load(spacy_model)
+            logger.info(f"Loaded spaCy model '{spacy_model}'")
+        except OSError:
+            raise RuntimeError(
+                f"spaCy model '{spacy_model}' is not installed. Run: "
+                f"uv run python -m spacy download {spacy_model}"
+            )
 
         # Initialize entity linker
         self.entity_linker = EntityLinker(chromadb_host, chromadb_port)
@@ -192,13 +204,10 @@ class SemanticParser:
         )
 
     async def _parse_text(self, text: str) -> List[Triplet]:
-        """Extract triplets from free-form text"""
+        """Extract triplets from free-form text using spaCy's dependency parse"""
         doc = self.nlp(text)
 
         triplets = []
-
-        # Extract entities
-        entities = [(ent.text, ent.label_) for ent in doc.ents]
 
         # Simple subject-predicate-object extraction based on dependency parsing
         for sent in doc.sents:
@@ -303,10 +312,7 @@ WHERE {{
     def is_healthy(self) -> bool:
         """Check if parser is operational"""
         try:
-            return (
-                self.nlp is not None and
-                self.entity_linker is not None
-            )
+            return self.entity_linker is not None
         except Exception as e:
             logger.error(f"Health check failed: {e}")
             return False
