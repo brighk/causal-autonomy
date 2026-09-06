@@ -11,7 +11,7 @@ This enables CAF to properly handle:
 - Counterfactual: "Would Y occur if NOT X?" → do-calculus
 """
 
-from typing import List, Any, Optional, Set, Tuple, Dict
+from typing import Any
 from experiments.knowledge_base_fvl import KnowledgeBaseFVL
 from experiments.intervention_calculus import (
     CausalGraph,
@@ -75,14 +75,14 @@ class KnowledgeBaseFVLWithIntervention(KnowledgeBaseFVL):
     def __init__(self, *args, causal_graph_max_hops: int = 2, **kwargs):
         """Initialize with intervention calculus support."""
         super().__init__(*args, **kwargs)
-        self.causal_graph: Optional[CausalGraph] = None
-        self.causal_context: Optional[str] = None
-        self.current_query: Optional[str] = None
-        self.last_response: Optional[str] = None
+        self.causal_graph: CausalGraph | None = None
+        self.causal_context: str | None = None
+        self.current_query: str | None = None
+        self.last_response: str | None = None
         self.causal_graph_max_hops = causal_graph_max_hops
-        self._kb_graph_cache: Dict[Tuple[str, ...], CausalGraph] = {}
+        self._kb_graph_cache: dict[tuple[str, ...], CausalGraph] = {}
 
-    def parse(self, response: str) -> List[RDFTriplet]:
+    def parse(self, response: str) -> list[RDFTriplet]:
         """Parse response and retain raw text for answer-level verification."""
         self.last_response = response
         return super().parse(response)
@@ -130,10 +130,10 @@ class KnowledgeBaseFVLWithIntervention(KnowledgeBaseFVL):
 
     def verify(
         self,
-        triplets: List[RDFTriplet],
+        triplets: list[RDFTriplet],
         knowledge_base: Any = None,
-        query: Optional[str] = None
-    ) -> List[VerificationResult]:
+        query: str | None = None
+    ) -> list[VerificationResult]:
         """
         Verify triplets using intervention calculus if counterfactual.
 
@@ -181,7 +181,7 @@ class KnowledgeBaseFVLWithIntervention(KnowledgeBaseFVL):
 
     def _ensure_causal_graph(
         self,
-        triplets: List[RDFTriplet],
+        triplets: list[RDFTriplet],
         query: str
     ) -> None:
         """
@@ -203,8 +203,8 @@ class KnowledgeBaseFVLWithIntervention(KnowledgeBaseFVL):
 
     def _build_causal_graph_from_kb(
         self,
-        seed_texts: List[str],
-        max_hops: Optional[int] = None
+        seed_texts: list[str],
+        max_hops: int | None = None
     ) -> CausalGraph:
         """
         Build a do-calculus CausalGraph by walking causal-predicate edges
@@ -229,8 +229,8 @@ class KnowledgeBaseFVLWithIntervention(KnowledgeBaseFVL):
             return self._kb_graph_cache[cache_key]
 
         graph = CausalGraph()
-        visited_uris: Set[str] = set()
-        frontier: List[str] = []
+        visited_uris: set[str] = set()
+        frontier: list[str] = []
 
         for seed_text in seed_texts:
             mapping = self._link_entity(seed_text)
@@ -241,7 +241,7 @@ class KnowledgeBaseFVLWithIntervention(KnowledgeBaseFVL):
         for _ in range(max_hops):
             if not frontier:
                 break
-            next_frontier: List[str] = []
+            next_frontier: list[str] = []
 
             for uri in frontier:
                 for neighbor_uri, cause_uri, effect_uri in self._causal_edges(uri):
@@ -258,7 +258,7 @@ class KnowledgeBaseFVLWithIntervention(KnowledgeBaseFVL):
         self._kb_graph_cache[cache_key] = graph
         return graph
 
-    def _causal_edges(self, uri: str) -> List[Tuple[str, str, str]]:
+    def _causal_edges(self, uri: str) -> list[tuple[str, str, str]]:
         """
         One hop of causal-predicate-filtered SPARQL traversal from `uri`.
 
@@ -280,7 +280,7 @@ class KnowledgeBaseFVLWithIntervention(KnowledgeBaseFVL):
         if not result.success:
             return []
 
-        edges: List[Tuple[str, str, str]] = []
+        edges: list[tuple[str, str, str]] = []
         for binding in result.result.get("results", {}).get("bindings", []):
             obj_uri = binding.get("o", {}).get("value")
             subj_uri = binding.get("s", {}).get("value")
@@ -293,8 +293,8 @@ class KnowledgeBaseFVLWithIntervention(KnowledgeBaseFVL):
 
     def _verify_with_intervention(
         self,
-        triplets: List[RDFTriplet]
-    ) -> List[VerificationResult]:
+        triplets: list[RDFTriplet]
+    ) -> list[VerificationResult]:
         """
         Verify using intervention calculus.
 

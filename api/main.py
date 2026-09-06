@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 import sys
 import time
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any
 from loguru import logger
 
 # framework1/ (for modules.* and utils.*, both now live under here)
@@ -27,7 +27,7 @@ from utils.config import get_settings
 
 
 # Global service instances
-services: Dict[str, Any] = {}
+services: dict[str, Any] = {}
 
 
 @asynccontextmanager

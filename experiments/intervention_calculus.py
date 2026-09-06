@@ -12,8 +12,8 @@ This enables proper counterfactual queries like:
 "Would Y occur if we intervene and set X=false?"
 """
 
-from typing import Set, Dict, List, Optional
 from dataclasses import dataclass
+from typing import TypedDict
 import re
 
 
@@ -38,8 +38,8 @@ class CausalGraph:
     """
 
     def __init__(self):
-        self.edges: Set[CausalEdge] = set()
-        self.nodes: Set[str] = set()
+        self.edges: set[CausalEdge] = set()
+        self.nodes: set[str] = set()
 
     def add_edge(self, cause: str, effect: str):
         """Add causal edge: cause → effect."""
@@ -48,15 +48,15 @@ class CausalGraph:
         self.nodes.add(cause)
         self.nodes.add(effect)
 
-    def get_parents(self, node: str) -> Set[str]:
+    def get_parents(self, node: str) -> set[str]:
         """Get all direct causes of a node."""
         return {edge.cause for edge in self.edges if edge.effect == node}
 
-    def get_children(self, node: str) -> Set[str]:
+    def get_children(self, node: str) -> set[str]:
         """Get all direct effects of a node."""
         return {edge.effect for edge in self.edges if edge.cause == node}
 
-    def get_ancestors(self, node: str) -> Set[str]:
+    def get_ancestors(self, node: str) -> set[str]:
         """Get all ancestors (recursive causes) of a node."""
         ancestors = set()
         to_visit = list(self.get_parents(node))
@@ -69,7 +69,7 @@ class CausalGraph:
 
         return ancestors
 
-    def get_descendants(self, node: str) -> Set[str]:
+    def get_descendants(self, node: str) -> set[str]:
         """Get all descendants (recursive effects) of a node."""
         descendants = set()
         to_visit = list(self.get_children(node))
@@ -166,7 +166,7 @@ class CausalGraph:
                 ancestors = intervened_graph.get_ancestors(target)
                 return len(ancestors) > 0
 
-    def to_sparql_patterns(self, namespace: str = "http://counterbench.org/") -> List[str]:
+    def to_sparql_patterns(self, namespace: str = "http://counterbench.org/") -> list[str]:
         """Convert graph to SPARQL triple patterns."""
         patterns = []
         for edge in self.edges:
@@ -205,7 +205,15 @@ def parse_causal_context(context: str) -> CausalGraph:
     return graph
 
 
-def parse_counterfactual_query(query: str) -> Optional[Dict[str, any]]:
+class CounterfactualQuery(TypedDict):
+    """Parsed counterfactual target and intervention."""
+
+    target: str
+    intervention_node: str
+    intervention_value: bool
+
+
+def parse_counterfactual_query(query: str) -> CounterfactualQuery | None:
     """
     Parse counterfactual query.
 
@@ -253,7 +261,7 @@ def parse_counterfactual_query(query: str) -> Optional[Dict[str, any]]:
     return None
 
 
-def counterfactual_reasoning_with_graph(query: str, graph: CausalGraph) -> Optional[bool]:
+def counterfactual_reasoning_with_graph(query: str, graph: CausalGraph) -> bool | None:
     """
     Answer a counterfactual query against an already-built CausalGraph.
 
@@ -281,7 +289,7 @@ def counterfactual_reasoning_with_graph(query: str, graph: CausalGraph) -> Optio
     )
 
 
-def counterfactual_reasoning(query: str, context: str) -> Optional[bool]:
+def counterfactual_reasoning(query: str, context: str) -> bool | None:
     """
     Answer counterfactual query using intervention calculus.
 

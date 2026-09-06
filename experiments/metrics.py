@@ -15,7 +15,7 @@ Additionally computes:
 
 import numpy as np
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Tuple, Any
+from typing import Any
 from collections import defaultdict
 import json
 from enum import Enum
@@ -37,7 +37,7 @@ class InferenceDepthResult:
     """Result for inference depth metric."""
     chain_id: str
     max_depth_achieved: int
-    contradiction_at_depth: Optional[int]
+    contradiction_at_depth: int | None
     ground_truth_depth: int
     depth_ratio: float  # achieved / ground_truth
 
@@ -47,7 +47,7 @@ class ContradictionResult:
     """Result for contradiction detection."""
     chain_id: str
     contradiction_detected: bool
-    contradiction_type: Optional[str]
+    contradiction_type: str | None
     false_positive: bool
     false_negative: bool
 
@@ -67,8 +67,8 @@ class SemanticInvarianceResult:
     """Result for semantic invariance across perturbations."""
     chain_id: str
     original_output: str
-    perturbation_outputs: Dict[str, str]
-    consistency_scores: Dict[str, float]
+    perturbation_outputs: dict[str, str]
+    consistency_scores: dict[str, float]
     mean_consistency: float
     variance: float
 
@@ -92,20 +92,20 @@ class ExperimentMetrics:
     semantic_invariance_std: float
 
     # Per-domain breakdown
-    metrics_by_domain: Dict[str, Dict[str, float]]
+    metrics_by_domain: dict[str, dict[str, float]]
 
     # Statistical measures
     num_chains: int
     num_perturbations: int
-    confidence_interval_95: Tuple[float, float]
+    confidence_interval_95: tuple[float, float]
 
     # Raw results for analysis
-    depth_results: List[InferenceDepthResult] = field(default_factory=list)
-    contradiction_results: List[ContradictionResult] = field(default_factory=list)
-    entailment_results: List[EntailmentResult] = field(default_factory=list)
-    invariance_results: List[SemanticInvarianceResult] = field(default_factory=list)
+    depth_results: list[InferenceDepthResult] = field(default_factory=list)
+    contradiction_results: list[ContradictionResult] = field(default_factory=list)
+    entailment_results: list[EntailmentResult] = field(default_factory=list)
+    invariance_results: list[SemanticInvarianceResult] = field(default_factory=list)
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         """Convert to dictionary for JSON export."""
         return {
             "primary_metrics": {
@@ -314,7 +314,7 @@ class MetricsCalculator:
         self,
         chain: CausalChain,
         original_output: CAFOutput,
-        perturbation_outputs: Dict[PerturbationType, CAFOutput]
+        perturbation_outputs: dict[PerturbationType, CAFOutput]
     ) -> SemanticInvarianceResult:
         """
         Compute semantic invariance across prompt perturbations.
@@ -357,9 +357,9 @@ class MetricsCalculator:
 
     def compute_all_metrics(
         self,
-        chains: List[CausalChain],
-        caf_outputs: List[CAFOutput],
-        perturbation_outputs: Optional[List[Dict[PerturbationType, CAFOutput]]] = None
+        chains: list[CausalChain],
+        caf_outputs: list[CAFOutput],
+        perturbation_outputs: list[dict[PerturbationType, CAFOutput]] | None = None
     ) -> ExperimentMetrics:
         """
         Compute all metrics for a complete experiment.
@@ -469,7 +469,7 @@ class MetricsCalculator:
 def compute_baseline_comparison(
     caf_metrics: ExperimentMetrics,
     baseline_metrics: ExperimentMetrics
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Compute comparison between CAF and baseline metrics.
 

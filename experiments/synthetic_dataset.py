@@ -15,7 +15,6 @@ import random
 import json
 import hashlib
 from dataclasses import dataclass, field, asdict
-from typing import List, Dict, Optional, Tuple, Set
 from enum import Enum
 from pathlib import Path
 import re
@@ -62,7 +61,7 @@ class LogicalStep:
         phrase = relation_phrases[self.relation]
         return f"{self.antecedent} {phrase} {self.consequent}"
 
-    def to_rdf_triple(self) -> Tuple[str, str, str]:
+    def to_rdf_triple(self) -> tuple[str, str, str]:
         """Convert to RDF triple format."""
         subject = self.antecedent.lower().replace(" ", "_")
         predicate = f"caf:{self.relation.value}"
@@ -77,20 +76,20 @@ class PromptPerturbation:
     perturbed_prompt: str
     perturbation_type: PerturbationType
     expected_same_output: bool = True
-    perturbation_details: Dict = field(default_factory=dict)
+    perturbation_details: dict = field(default_factory=dict)
 
 
 @dataclass
 class CausalChain:
     """A complete causal chain with metadata."""
     chain_id: str
-    steps: List[LogicalStep]
+    steps: list[LogicalStep]
     domain: str
     complexity_score: float
-    ground_truth_entailments: List[str]
-    injected_contradictions: List[str] = field(default_factory=list)
-    perturbations: List[PromptPerturbation] = field(default_factory=list)
-    metadata: Dict = field(default_factory=dict)
+    ground_truth_entailments: list[str]
+    injected_contradictions: list[str] = field(default_factory=list)
+    perturbations: list[PromptPerturbation] = field(default_factory=list)
+    metadata: dict = field(default_factory=dict)
 
     @property
     def depth(self) -> int:
@@ -115,7 +114,7 @@ class CausalChain:
         premises.append(f"\nQuestion: What can we conclude about {self.final_conclusion}?")
         return "\n".join(premises)
 
-    def get_intermediate_conclusions(self) -> List[str]:
+    def get_intermediate_conclusions(self) -> list[str]:
         """Get all intermediate conclusions in the chain."""
         return [step.consequent for step in self.steps]
 
@@ -356,7 +355,7 @@ class SyntheticDatasetGenerator:
             }
         )
 
-    def _generate_ground_truth(self, steps: List[LogicalStep]) -> List[str]:
+    def _generate_ground_truth(self, steps: list[LogicalStep]) -> list[str]:
         """Generate ground truth entailments for a chain."""
         entailments = []
 
@@ -380,7 +379,7 @@ class SyntheticDatasetGenerator:
 
         return entailments
 
-    def _inject_contradiction(self, steps: List[LogicalStep]) -> str:
+    def _inject_contradiction(self, steps: list[LogicalStep]) -> str:
         """Inject a contradiction into the chain."""
         if not steps:
             return ""
@@ -401,7 +400,7 @@ class SyntheticDatasetGenerator:
         self,
         chain: CausalChain,
         num_perturbations: int = 3
-    ) -> List[PromptPerturbation]:
+    ) -> list[PromptPerturbation]:
         """
         Generate prompt perturbations for semantic invariance testing.
 
@@ -528,8 +527,8 @@ class SyntheticDatasetGenerator:
         max_depth: int = 10,
         perturbations_per_chain: int = 3,
         contradiction_rate: float = 0.2,
-        domains: Optional[List[str]] = None
-    ) -> List[CausalChain]:
+        domains: list[str] | None = None
+    ) -> list[CausalChain]:
         """
         Generate a complete synthetic dataset.
 
@@ -571,7 +570,7 @@ class SyntheticDatasetGenerator:
 
     def export_dataset(
         self,
-        dataset: List[CausalChain],
+        dataset: list[CausalChain],
         output_path: str,
         format: str = "json"
     ) -> str:
@@ -613,7 +612,7 @@ class SyntheticDatasetGenerator:
 
         return str(output_path)
 
-    def _chain_to_dict(self, chain: CausalChain) -> Dict:
+    def _chain_to_dict(self, chain: CausalChain) -> dict:
         """Convert a CausalChain to a dictionary."""
         return {
             "chain_id": chain.chain_id,

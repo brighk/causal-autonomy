@@ -18,7 +18,7 @@ import time
 import sys
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Any, Tuple
+from typing import Any
 from dataclasses import asdict
 import random
 
@@ -99,16 +99,16 @@ class ExperimentRunner:
             self.rag_cot_baseline = create_rag_cot_baseline(inference_layer, top_k=3, num_steps=3)
 
         # Results storage
-        self.dataset: List[CausalChain] = []
-        self.caf_outputs: List[CAFOutput] = []
-        self.baseline_outputs: List[CAFOutput] = []
-        self.cot_outputs: List[CAFOutput] = []
-        self.rag_outputs: List[CAFOutput] = []
-        self.rag_cot_outputs: List[CAFOutput] = []
-        self.perturbation_outputs: List[Dict[PerturbationType, CAFOutput]] = []
+        self.dataset: list[CausalChain] = []
+        self.caf_outputs: list[CAFOutput] = []
+        self.baseline_outputs: list[CAFOutput] = []
+        self.cot_outputs: list[CAFOutput] = []
+        self.rag_outputs: list[CAFOutput] = []
+        self.rag_cot_outputs: list[CAFOutput] = []
+        self.perturbation_outputs: list[dict[PerturbationType, CAFOutput]] = []
         # Baseline outputs on perturbed prompts, needed to measure baseline
         # semantic invariance under the same protocol as CAF.
-        self.baseline_pert_outputs: Dict[str, List[Dict[PerturbationType, CAFOutput]]] = {
+        self.baseline_pert_outputs: dict[str, list[dict[PerturbationType, CAFOutput]]] = {
             "Vanilla": [], "CoT": [], "RAG": [], "RAG+CoT": []
         }
 
@@ -121,7 +121,7 @@ class ExperimentRunner:
         self,
         num_chains: int = 75,
         perturbations_per_chain: int = 3
-    ) -> List[CausalChain]:
+    ) -> list[CausalChain]:
         """
         Generate synthetic causal chain dataset.
 
@@ -148,7 +148,7 @@ class ExperimentRunner:
 
         return self.dataset
 
-    def run_caf_evaluation(self) -> Tuple[List[CAFOutput], List[CAFOutput]]:
+    def run_caf_evaluation(self) -> tuple[list[CAFOutput], list[CAFOutput]]:
         """
         Run CAF evaluation and all baselines on all chains.
 
@@ -308,7 +308,7 @@ class ExperimentRunner:
             metadata={"baseline": True}
         )
 
-    def compute_metrics(self) -> Dict[str, ExperimentMetrics]:
+    def compute_metrics(self) -> dict[str, ExperimentMetrics]:
         """
         Compute all evaluation metrics for CAF and all baselines.
 
@@ -359,8 +359,8 @@ class ExperimentRunner:
 
     def export_results(
         self,
-        all_metrics: Dict[str, ExperimentMetrics]
-    ) -> Dict[str, str]:
+        all_metrics: dict[str, ExperimentMetrics]
+    ) -> dict[str, str]:
         """
         Export all results to files.
 
@@ -431,7 +431,7 @@ class ExperimentRunner:
         self.log(f"Exported {len(exported_files)} files to {self.output_dir}")
         return exported_files
 
-    def _generate_latex_table(self, all_metrics: Dict[str, ExperimentMetrics]) -> str:
+    def _generate_latex_table(self, all_metrics: dict[str, ExperimentMetrics]) -> str:
         """Generate LaTeX table comparing all methods."""
         if "CAF" not in all_metrics:
             # Fallback if CAF metrics not available
@@ -474,7 +474,7 @@ class ExperimentRunner:
 
     def _generate_report(
         self,
-        all_metrics: Dict[str, ExperimentMetrics]
+        all_metrics: dict[str, ExperimentMetrics]
     ) -> str:
         """Generate human-readable experiment report for all methods."""
         if not all_metrics:
@@ -591,7 +591,7 @@ END OF REPORT
         self,
         num_chains: int = 75,
         perturbations_per_chain: int = 3
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Run the complete experiment pipeline.
 

@@ -16,7 +16,7 @@ Requirements:
 
 import re
 import time
-from typing import List, Optional, Any, Dict, Tuple
+from typing import Any
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from functools import lru_cache
@@ -65,7 +65,7 @@ class SPARQLQueryResult:
     success: bool
     result: Any
     latency_ms: float
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class KnowledgeBaseFVL(FormalVerificationLayer):
@@ -128,7 +128,7 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
             raise
 
         # Entity URI cache (in-memory)
-        self.entity_cache: Dict[str, EntityMapping] = {}
+        self.entity_cache: dict[str, EntityMapping] = {}
         self.cache_size = cache_size
 
         # Metrics
@@ -144,7 +144,7 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
 
         logger.info(f"KnowledgeBaseFVL initialized with endpoint: {sparql_endpoint}")
 
-    def parse(self, response: str) -> List[RDFTriplet]:
+    def parse(self, response: str) -> list[RDFTriplet]:
         """
         Extract RDF triplets from LLM response using dependency parsing.
 
@@ -245,10 +245,10 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
 
     def verify(
         self,
-        triplets: List[RDFTriplet],
+        triplets: list[RDFTriplet],
         knowledge_base: Any = None,  # Not used, kept for interface compatibility
-        query: Optional[str] = None  # Not used here; consumed by subclasses (e.g. KnowledgeBaseFVLWithIntervention)
-    ) -> List[VerificationResult]:
+        query: str | None = None  # Not used here; consumed by subclasses (e.g. KnowledgeBaseFVLWithIntervention)
+    ) -> list[VerificationResult]:
         """
         Verify triplets against knowledge base via SPARQL.
 
@@ -393,7 +393,7 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
             confidence_score=0.0
         )
 
-    def _split_negation(self, predicate: str) -> Tuple[bool, str]:
+    def _split_negation(self, predicate: str) -> tuple[bool, str]:
         """Split a `parse()`-produced "not_"-prefixed predicate into
         (is_negated, base_predicate), so KB predicate mapping and query
         construction always operate on the plain verb."""
@@ -401,7 +401,7 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
             return True, predicate[len("not_"):]
         return False, predicate
 
-    def _link_entity(self, entity_text: str) -> Optional[EntityMapping]:
+    def _link_entity(self, entity_text: str) -> EntityMapping | None:
         """
         Link entity mention to KB URI.
 
@@ -460,7 +460,7 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
         logger.debug(f"Failed to link entity: {entity_text}")
         return None
 
-    def _exact_entity_match(self, entity_text: str) -> Optional[str]:
+    def _exact_entity_match(self, entity_text: str) -> str | None:
         """Find exact label match in KB."""
         entity_literal = self._sparql_string_literal(entity_text)
         query = f"""
@@ -485,7 +485,7 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
 
         return None
 
-    def _resolve_label(self, uri: str) -> Optional[str]:
+    def _resolve_label(self, uri: str) -> str | None:
         """
         Resolve a KB URI back to a human-readable label (reverse of
         `_exact_entity_match`'s label->URI lookup).
@@ -512,7 +512,7 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
         local_name = uri.rsplit("#", 1)[-1].rsplit("/", 1)[-1]
         return local_name or None
 
-    def _fuzzy_entity_search(self, entity_text: str) -> Optional[Tuple[str, float]]:
+    def _fuzzy_entity_search(self, entity_text: str) -> tuple[str, float] | None:
         """
         Find similar entities using fuzzy string matching.
 
@@ -746,7 +746,7 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
         value = value.replace("\t", "\\t")
         return f'"{value}"'
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Return verification statistics."""
         avg_query_time = (
             self.stats["total_query_time_ms"] / self.stats["queries_executed"]

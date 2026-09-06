@@ -9,7 +9,7 @@ Implementations of baseline approaches to compare against CAF:
 These baselines help demonstrate CAF's superiority in the paper.
 """
 
-from typing import Optional, List, Dict, Any
+from typing import Any
 from dataclasses import dataclass
 import random
 
@@ -39,7 +39,7 @@ class VanillaLLMBaseline(InferenceLayer):
     def generate(
         self,
         prompt: str,
-        constraints: Optional[List[str]] = None
+        constraints: list[str] | None = None
     ) -> str:
         """Generate response without any enhancements."""
         # Ignore constraints for vanilla baseline
@@ -82,7 +82,7 @@ Show your reasoning for each step."""
     def generate(
         self,
         prompt: str,
-        constraints: Optional[List[str]] = None
+        constraints: list[str] | None = None
     ) -> str:
         """Generate with Chain of Thought prompting."""
         cot_prompt = self._create_cot_prompt(prompt)
@@ -112,7 +112,7 @@ class RAGBaseline(InferenceLayer):
     def __init__(
         self,
         base_llm: InferenceLayer,
-        knowledge_base: Optional[Dict[str, List[str]]] = None,
+        knowledge_base: dict[str, list[str]] | None = None,
         top_k: int = 3
     ):
         self.base_llm = base_llm
@@ -152,7 +152,7 @@ class RAGBaseline(InferenceLayer):
 
         self.knowledge_base[domain] = facts
 
-    def _retrieve_facts(self, prompt: str, domain: str = None) -> List[str]:
+    def _retrieve_facts(self, prompt: str, domain: str = None) -> list[str]:
         """
         Retrieve top-k relevant facts from knowledge base.
 
@@ -179,7 +179,7 @@ class RAGBaseline(InferenceLayer):
     def _create_rag_prompt(
         self,
         original_prompt: str,
-        retrieved_facts: List[str]
+        retrieved_facts: list[str]
     ) -> str:
         """Create RAG prompt with retrieved context."""
         if not retrieved_facts:
@@ -197,7 +197,7 @@ class RAGBaseline(InferenceLayer):
     def generate(
         self,
         prompt: str,
-        constraints: Optional[List[str]] = None,
+        constraints: list[str] | None = None,
         domain: str = None
     ) -> str:
         """Generate with retrieval-augmented prompting."""
@@ -231,7 +231,7 @@ class HybridRAGCoTBaseline(InferenceLayer):
     def __init__(
         self,
         base_llm: InferenceLayer,
-        knowledge_base: Optional[Dict[str, List[str]]] = None,
+        knowledge_base: dict[str, list[str]] | None = None,
         top_k: int = 3,
         num_steps: int = 3
     ):
@@ -245,7 +245,7 @@ class HybridRAGCoTBaseline(InferenceLayer):
     def generate(
         self,
         prompt: str,
-        constraints: Optional[List[str]] = None,
+        constraints: list[str] | None = None,
         domain: str = None
     ) -> str:
         """Generate with both RAG and CoT."""

@@ -4,7 +4,6 @@ Can be deployed separately for GPU isolation.
 """
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import Optional, List
 import asyncio
 import sys
 from pathlib import Path
@@ -19,15 +18,15 @@ from utils.config import get_settings
 
 
 # Global engine instance
-engine: Optional[InferenceEngine] = None
+engine: InferenceEngine | None = None
 
 class GenerateRequest(BaseModel):
     prompt: str
     max_tokens: int = 512
     temperature: float = 0.7
     top_p: float = 0.9
-    session_id: Optional[str] = None
-    constraints: Optional[List[str]] = None
+    session_id: str | None = None
+    constraints: list[str] | None = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

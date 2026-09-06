@@ -34,7 +34,7 @@ import re
 import time
 import random
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Tuple, Any, Callable
+from typing import Any
 from enum import Enum
 import json
 from abc import ABC, abstractmethod
@@ -62,7 +62,7 @@ class RDFTriplet:
     predicate: str
     obj: str  # 'object' is reserved
     confidence: float = 1.0
-    source_span: Optional[str] = None
+    source_span: str | None = None
 
     def to_sparql_pattern(self) -> str:
         """Convert to SPARQL triple pattern."""
@@ -79,8 +79,8 @@ class VerificationResult:
     status: VerificationStatus
     kb_support: bool
     contradiction_found: bool
-    supporting_facts: List[str] = field(default_factory=list)
-    contradicting_facts: List[str] = field(default_factory=list)
+    supporting_facts: list[str] = field(default_factory=list)
+    contradicting_facts: list[str] = field(default_factory=list)
     confidence_score: float = 0.0
 
 
@@ -89,10 +89,10 @@ class IterationLog:
     """Log entry for a single CAF iteration."""
     iteration: int
     draft_response: str
-    extracted_triplets: List[RDFTriplet]
-    verification_results: List[VerificationResult]
+    extracted_triplets: list[RDFTriplet]
+    verification_results: list[VerificationResult]
     overall_score: float
-    injected_constraints: List[str]
+    injected_constraints: list[str]
     duration_ms: float
 
 
@@ -115,10 +115,10 @@ class CAFOutput:
     decision: AdjudicationDecision
     iterations_used: int
     final_score: float
-    iteration_logs: List[IterationLog]
+    iteration_logs: list[IterationLog]
     total_duration_ms: float
-    constraints_applied: List[str]
-    metadata: Dict = field(default_factory=dict)
+    constraints_applied: list[str]
+    metadata: dict = field(default_factory=dict)
 
 
 class InferenceLayer(ABC):
@@ -128,19 +128,19 @@ class InferenceLayer(ABC):
     def generate(
         self,
         prompt: str,
-        constraints: Optional[List[str]] = None
+        constraints: list[str] | None = None
     ) -> str:
         """Generate a response, optionally with constraints."""
         pass
 
     def generate_batch(
         self,
-        prompts: List[str],
-        constraints: Optional[List[List[str]]] = None,
-        batch_size: Optional[int] = None,
-    ) -> List[str]:
+        prompts: list[str],
+        constraints: list[list[str]] | None = None,
+        batch_size: int | None = None,
+    ) -> list[str]:
         """Generate responses for a batch of prompts."""
-        results: List[str] = []
+        results: list[str] = []
         for idx, prompt in enumerate(prompts):
             per_constraints = constraints[idx] if constraints and idx < len(constraints) else None
             results.append(self.generate(prompt, per_constraints))
@@ -151,17 +151,17 @@ class FormalVerificationLayer(ABC):
     """Abstract Formal Verification Layer (FVL) interface."""
 
     @abstractmethod
-    def parse(self, response: str) -> List[RDFTriplet]:
+    def parse(self, response: str) -> list[RDFTriplet]:
         """Parse response into RDF triplets."""
         pass
 
     @abstractmethod
     def verify(
         self,
-        triplets: List[RDFTriplet],
+        triplets: list[RDFTriplet],
         knowledge_base: Any,
-        query: Optional[str] = None
-    ) -> List[VerificationResult]:
+        query: str | None = None
+    ) -> list[VerificationResult]:
         """Verify triplets against knowledge base via SPARQL.
 
         `query` is the original prompt/question being answered, passed
@@ -178,7 +178,7 @@ class DecisionEngine(ABC):
     def adjudicate(
         self,
         response: str,
-        results: List[VerificationResult],
+        results: list[VerificationResult],
         score: float,
         threshold: float
     ) -> AdjudicationDecision:
@@ -212,7 +212,7 @@ class SimulatedInferenceLayer(InferenceLayer):
     def generate(
         self,
         prompt: str,
-        constraints: Optional[List[str]] = None
+        constraints: list[str] | None = None
     ) -> str:
         """
         Generate a simulated response.
@@ -255,7 +255,7 @@ class SimulatedFVL(FormalVerificationLayer):
     def __init__(self, kb_coverage: float = 0.8):
         self.kb_coverage = kb_coverage
 
-    def parse(self, response: str) -> List[RDFTriplet]:
+    def parse(self, response: str) -> list[RDFTriplet]:
         """Parse response into simulated triplets."""
         # Generate 3-7 triplets per response
         num_triplets = random.randint(3, 7)
@@ -273,10 +273,10 @@ class SimulatedFVL(FormalVerificationLayer):
 
     def verify(
         self,
-        triplets: List[RDFTriplet],
+        triplets: list[RDFTriplet],
         knowledge_base: Any,
         accuracy_hint: float = 0.7
-    ) -> List[VerificationResult]:
+    ) -> list[VerificationResult]:
         """
         Verify triplets with simulated SPARQL queries.
 
@@ -327,7 +327,7 @@ class SimulatedDecisionEngine(DecisionEngine):
     def adjudicate(
         self,
         response: str,
-        results: List[VerificationResult],
+        results: list[VerificationResult],
         score: float,
         threshold: float
     ) -> AdjudicationDecision:
@@ -371,10 +371,10 @@ class CAFLoop:
 
     def __init__(
         self,
-        config: Optional[CAFConfig] = None,
-        inference_layer: Optional[InferenceLayer] = None,
-        verification_layer: Optional[FormalVerificationLayer] = None,
-        decision_engine: Optional[DecisionEngine] = None
+        config: CAFConfig | None = None,
+        inference_layer: InferenceLayer | None = None,
+        verification_layer: FormalVerificationLayer | None = None,
+        decision_engine: DecisionEngine | None = None
     ):
         self.config = config or CAFConfig()
 
@@ -385,7 +385,7 @@ class CAFLoop:
 
     def compute_score(
         self,
-        results: List[VerificationResult]
+        results: list[VerificationResult]
     ) -> float:
         """
         Compute overall verification score from results.
@@ -407,8 +407,8 @@ class CAFLoop:
 
     def extract_constraints(
         self,
-        results: List[VerificationResult]
-    ) -> List[str]:
+        results: list[VerificationResult]
+    ) -> list[str]:
         """
         Extract constraint statements from failed verifications.
 
@@ -551,7 +551,7 @@ class CAFLoop:
         self,
         prompt: str,
         knowledge_base: Any = None
-    ) -> Tuple[CAFOutput, CAFOutput]:
+    ) -> tuple[CAFOutput, CAFOutput]:
         """
         Execute CAF and baseline (no verification) for comparison.
 

@@ -2,7 +2,7 @@
 Client for communicating with the Inference Engine service.
 Uses gRPC for high-throughput, low-latency communication.
 """
-from typing import Dict, Any, Optional
+from typing import Any
 import httpx
 from loguru import logger
 

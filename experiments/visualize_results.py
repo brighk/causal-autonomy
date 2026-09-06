@@ -12,16 +12,16 @@ import argparse
 import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any
 
 
-def load_metrics(json_path: str) -> Dict[str, Any]:
+def load_metrics(json_path: str) -> dict[str, Any]:
     """Load metrics from JSON file."""
     with open(json_path, 'r') as f:
         return json.load(f)
 
 
-def plot_primary_metrics(metrics_data: Dict[str, Any], output_dir: Path):
+def plot_primary_metrics(metrics_data: dict[str, Any], output_dir: Path):
     """
     Create bar chart comparing primary metrics across all methods.
     """
@@ -82,7 +82,7 @@ def plot_primary_metrics(metrics_data: Dict[str, Any], output_dir: Path):
     plt.close()
 
 
-def plot_improvements(metrics_data: Dict[str, Any], output_dir: Path):
+def plot_improvements(metrics_data: dict[str, Any], output_dir: Path):
     """
     Create bar chart showing CAF improvements over each baseline.
     """
@@ -131,7 +131,7 @@ def plot_improvements(metrics_data: Dict[str, Any], output_dir: Path):
     plt.close()
 
 
-def plot_per_domain_breakdown(metrics_data: Dict[str, Any], output_dir: Path):
+def plot_per_domain_breakdown(metrics_data: dict[str, Any], output_dir: Path):
     """
     Create grouped bar chart showing CAF performance across domains.
     """
@@ -194,7 +194,7 @@ def plot_per_domain_breakdown(metrics_data: Dict[str, Any], output_dir: Path):
     plt.close()
 
 
-def plot_semantic_invariance(metrics_data: Dict[str, Any], output_dir: Path):
+def plot_semantic_invariance(metrics_data: dict[str, Any], output_dir: Path):
     """
     Create bar chart showing semantic invariance (CAF vs baselines).
     """
@@ -242,7 +242,7 @@ def plot_semantic_invariance(metrics_data: Dict[str, Any], output_dir: Path):
     plt.close()
 
 
-def create_summary_figure(metrics_data: Dict[str, Any], output_dir: Path):
+def create_summary_figure(metrics_data: dict[str, Any], output_dir: Path):
     """
     Create a comprehensive summary figure with all key metrics.
     """

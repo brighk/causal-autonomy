@@ -4,7 +4,7 @@ Hardware: NVIDIA A100/H100 GPU
 Model: Llama-3-70B
 Framework: PyTorch + vLLM for high-throughput inference
 """
-from typing import List, Dict, Any, Optional
+from typing import Any
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from loguru import logger
@@ -88,7 +88,7 @@ class InferenceEngine:
         )
         logger.info("Hugging Face model initialized")
 
-    def _build_causal_prompt(self, user_prompt: str, constraints: Optional[List[str]] = None) -> str:
+    def _build_causal_prompt(self, user_prompt: str, constraints: list[str] | None = None) -> str:
         """
         Construct a prompt that encourages the model to generate
         verifiable causal assertions alongside the response.
@@ -128,9 +128,9 @@ class InferenceEngine:
     async def generate(
         self,
         prompt: str,
-        config: Optional[GenerationConfig] = None,
-        constraints: Optional[List[str]] = None
-    ) -> Dict[str, Any]:
+        config: GenerationConfig | None = None,
+        constraints: list[str] | None = None
+    ) -> dict[str, Any]:
         """
         Generate response with causal assertions.
 
@@ -164,7 +164,7 @@ class InferenceEngine:
         self,
         prompt: str,
         config: GenerationConfig
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Generate using vLLM engine"""
         sampling_params = SamplingParams(
             temperature=config.temperature,
@@ -177,10 +177,8 @@ class InferenceEngine:
         )
 
         # Run in thread pool to avoid blocking
-        loop = asyncio.get_event_loop()
-        outputs = await loop.run_in_executor(
-            None,
-            lambda: self.llm.generate([prompt], sampling_params)
+        outputs = await asyncio.to_thread(
+            self.llm.generate, [prompt], sampling_params
         )
 
         output = outputs[0]
@@ -198,22 +196,19 @@ class InferenceEngine:
         self,
         prompt: str,
         config: GenerationConfig
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Generate using Hugging Face transformers"""
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
 
-        loop = asyncio.get_event_loop()
-        outputs = await loop.run_in_executor(
-            None,
-            lambda: self.model.generate(
-                **inputs,
-                max_new_tokens=config.max_tokens,
-                temperature=config.temperature,
-                top_p=config.top_p,
-                top_k=config.top_k,
-                repetition_penalty=config.repetition_penalty,
-                do_sample=True
-            )
+        outputs = await asyncio.to_thread(
+            self.model.generate,
+            **inputs,
+            max_new_tokens=config.max_tokens,
+            temperature=config.temperature,
+            top_p=config.top_p,
+            top_k=config.top_k,
+            repetition_penalty=config.repetition_penalty,
+            do_sample=True
         )
 
         generated_text = self.tokenizer.decode(
@@ -228,7 +223,7 @@ class InferenceEngine:
             }
         }
 
-    def _parse_response(self, response: str) -> Dict[str, Any]:
+    def _parse_response(self, response: str) -> dict[str, Any]:
         """
         Parse the structured response to extract answer and causal assertions.
         """

@@ -6,7 +6,7 @@ Mechanism: Axiomatic Verification
 Validates causal assertions using formal causal reasoning.
 Checks for logical consistency and causal soundness.
 """
-from typing import List, Dict, Any, Optional
+from typing import Any
 import networkx as nx
 from loguru import logger
 
@@ -22,7 +22,7 @@ class CausalGraph:
     def __init__(self):
         self.graph = nx.DiGraph()
 
-    def add_causal_edge(self, cause: str, effect: str, metadata: Optional[Dict] = None):
+    def add_causal_edge(self, cause: str, effect: str, metadata: dict | None = None):
         """Add a causal relationship to the graph"""
         self.graph.add_edge(cause, effect, **(metadata or {}))
 
@@ -34,7 +34,7 @@ class CausalGraph:
         except:
             return False
 
-    def get_violations(self) -> List[str]:
+    def get_violations(self) -> list[str]:
         """Detect causal violations"""
         violations = []
 
@@ -78,8 +78,8 @@ class CausalValidator:
 
     async def validate(
         self,
-        assertions: List[CausalAssertion],
-        verified_triplets: List[Triplet]
+        assertions: list[CausalAssertion],
+        verified_triplets: list[Triplet]
     ) -> 'ValidationResult':
         """
         Validate causal assertions for logical consistency.
@@ -122,7 +122,7 @@ class CausalValidator:
             causal_graph_edges=list(self.causal_graph.graph.edges())
         )
 
-    def _build_graph_from_triplets(self, triplets: List[Triplet]):
+    def _build_graph_from_triplets(self, triplets: list[Triplet]):
         """Build causal graph from RDF triplets"""
         for triplet in triplets:
             # Identify causal predicates
@@ -151,8 +151,8 @@ class CausalValidator:
     async def _validate_assertion(
         self,
         assertion: CausalAssertion,
-        verified_triplets: List[Triplet]
-    ) -> List[str]:
+        verified_triplets: list[Triplet]
+    ) -> list[str]:
         """Validate a single causal assertion"""
         violations = []
 
@@ -176,8 +176,8 @@ class CausalValidator:
     def _find_contradiction(
         self,
         triplet: Triplet,
-        verified_triplets: List[Triplet]
-    ) -> Optional[str]:
+        verified_triplets: list[Triplet]
+    ) -> str | None:
         """
         Find if a triplet contradicts verified knowledge.
 
@@ -212,9 +212,9 @@ class ValidationResult:
     def __init__(
         self,
         is_valid: bool,
-        violations: List[str],
-        causal_graph_nodes: List[str],
-        causal_graph_edges: List[tuple]
+        violations: list[str],
+        causal_graph_nodes: list[str],
+        causal_graph_edges: list[tuple]
     ):
         self.is_valid = is_valid
         self.violations = violations

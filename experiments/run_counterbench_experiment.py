@@ -35,7 +35,7 @@ Usage:
 import json
 import argparse
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any
 from dataclasses import dataclass, asdict
 from datetime import datetime
 import sys
@@ -82,7 +82,7 @@ class CounterBenchResult:
 
     # Detailed info
     response_text: str
-    verification_details: Optional[Dict[str, Any]] = None
+    verification_details: dict[str, Any] | None = None
 
 
 class CounterBenchEvaluator:
@@ -105,7 +105,7 @@ class CounterBenchEvaluator:
         self.caf_loop = caf_loop
         self.use_llm = use_llm
         self.use_sparql = use_sparql
-        self.results: List[CounterBenchResult] = []
+        self.results: list[CounterBenchResult] = []
 
     def extract_answer(self, response: str) -> str:
         """
@@ -146,7 +146,7 @@ class CounterBenchEvaluator:
 
     def process_example(
         self,
-        example: Dict[str, Any],
+        example: dict[str, Any],
         verbose: bool = False
     ) -> CounterBenchResult:
         """
@@ -232,8 +232,8 @@ class CounterBenchEvaluator:
 
     def evaluate(
         self,
-        examples: List[Dict[str, Any]],
-        limit: Optional[int] = None,
+        examples: list[dict[str, Any]],
+        limit: int | None = None,
         verbose: bool = False
     ) -> None:
         """
@@ -260,7 +260,7 @@ class CounterBenchEvaluator:
         if not verbose:
             print()  # New line after progress
 
-    def compute_metrics(self) -> Dict[str, Any]:
+    def compute_metrics(self) -> dict[str, Any]:
         """
         Compute evaluation metrics.
 

@@ -10,7 +10,7 @@ Protocol:
 """
 from dataclasses import dataclass
 from difflib import SequenceMatcher
-from typing import List, Dict, Any, Optional, Tuple
+from typing import Any
 from SPARQLWrapper import SPARQLWrapper, JSON
 from loguru import logger
 import re
@@ -59,11 +59,11 @@ class EntityLinker:
         self.enable_fuzzy_match = enable_fuzzy_match
         self.fuzzy_match_limit = fuzzy_match_limit
         self.cache_size = cache_size
-        self.entity_cache: Dict[str, EntityMapping] = {}
+        self.entity_cache: dict[str, EntityMapping] = {}
 
         logger.info(f"Entity Linker initialized against {fuseki_endpoint}")
 
-    def link_entity(self, entity_text: str, top_k: int = 1) -> List[Dict[str, Any]]:
+    def link_entity(self, entity_text: str, top_k: int = 1) -> list[dict[str, Any]]:
         """
         Find the best-matching KB URI for a given text.
 
@@ -85,7 +85,7 @@ class EntityLinker:
             'source': mapping.method,
         }]
 
-    def _link_entity(self, entity_text: str) -> Optional[EntityMapping]:
+    def _link_entity(self, entity_text: str) -> EntityMapping | None:
         """
         Strategy: check cache, then exact label match, then fuzzy match.
         """
@@ -112,7 +112,7 @@ class EntityLinker:
 
         return None
 
-    def _exact_entity_match(self, entity_text: str) -> Optional[str]:
+    def _exact_entity_match(self, entity_text: str) -> str | None:
         """Find exact label match in the KB."""
         entity_literal = self._sparql_string_literal(entity_text)
         query = f"""
@@ -133,7 +133,7 @@ class EntityLinker:
             return bindings[0]["uri"]["value"]
         return None
 
-    def _fuzzy_entity_search(self, entity_text: str) -> Optional[Tuple[str, float]]:
+    def _fuzzy_entity_search(self, entity_text: str) -> tuple[str, float] | None:
         """Find similar entities using fuzzy string matching."""
         first_word = entity_text.split()[0] if entity_text else entity_text
         if not first_word:
@@ -198,7 +198,7 @@ class EntityLinker:
             self.entity_cache.pop(next(iter(self.entity_cache)))
         self.entity_cache[entity_text] = mapping
 
-    def _execute_sparql_query(self, query: str) -> Dict[str, Any]:
+    def _execute_sparql_query(self, query: str) -> dict[str, Any]:
         """Execute a SPARQL query against Fuseki; returns {} on failure."""
         self.sparql.setQuery(query)
         try:
@@ -252,16 +252,22 @@ class SemanticParser:
         # Initialize entity linker
         self.entity_linker = EntityLinker(fuseki_endpoint)
 
-        # Predicate templates (common relations)
+        # Predicate templates (common relations). Values are full absolute
+        # URIs, not prefixed names ("causality:causes") - _generate_sparql
+        # and TruthAnchor._build_sparql_query both wrap these in `<...>`,
+        # and SPARQL/Turtle never expands a prefix inside an IRIREF, so a
+        # prefixed-name value here would silently produce a literal IRI
+        # like <causality:causes> that can never match the KB's real
+        # <http://causality.org/causes> triples.
         self.predicate_templates = {
-            'is': 'rdf:type',
-            'has': 'schema:hasProperty',
-            'causes': 'causality:causes',
-            'located_in': 'schema:location',
-            'part_of': 'schema:isPartOf',
-            'related_to': 'schema:relatedTo',
-            'created_by': 'schema:creator',
-            'used_for': 'schema:purpose'
+            'is': 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',
+            'has': 'https://schema.org/hasProperty',
+            'causes': 'http://causality.org/causes',
+            'located_in': 'https://schema.org/location',
+            'part_of': 'https://schema.org/isPartOf',
+            'related_to': 'https://schema.org/relatedTo',
+            'created_by': 'https://schema.org/creator',
+            'used_for': 'https://schema.org/purpose'
         }
 
         logger.info("Semantic Parser initialized")
@@ -269,7 +275,7 @@ class SemanticParser:
     async def parse(
         self,
         text: str,
-        causal_assertions: Optional[List[CausalAssertion]] = None
+        causal_assertions: list[CausalAssertion] | None = None
     ) -> 'ParsedResult':
         """
         Parse text into RDF triplets.
@@ -281,9 +287,17 @@ class SemanticParser:
         Returns:
             ParsedResult with triplets and SPARQL query
         """
-        triplets = []
+        # Always parse the main answer text: it's typically the short,
+        # declarative sentence the LLM was asked to produce, and is often
+        # MORE extractable than the accompanying causal_assertions bullets
+        # (those tend to be longer, explanatory prose - "X leads to Y
+        # because Z" - that the SVO extractor below can't reduce to a
+        # triplet at all). Treating them as mutually exclusive branches
+        # meant a clean, verifiable answer was silently discarded whenever
+        # the LLM also included any causal assertions, which is the common
+        # case with modules/inference_engine/engine.py's prompt format.
+        triplets = await self._parse_text(text)
 
-        # If we have explicit causal assertions, parse those
         if causal_assertions:
             for assertion in causal_assertions:
                 assertion_triplets = await self._parse_assertion(
@@ -292,9 +306,6 @@ class SemanticParser:
                 triplets.extend(assertion_triplets)
                 # Update the assertion's triplets
                 assertion.triplets = assertion_triplets
-        else:
-            # Parse the entire text
-            triplets = await self._parse_text(text)
 
         # Generate SPARQL query
         sparql_query = self._generate_sparql(triplets)
@@ -305,7 +316,24 @@ class SemanticParser:
             source_text=text
         )
 
-    async def _parse_text(self, text: str) -> List[Triplet]:
+    def _extract_entity_text(self, token, doc) -> str:
+        """
+        Extract full entity text (noun chunk, or compounds/modifiers as a
+        fallback) instead of a single token - "cpu usage" instead of just
+        "usage" - so short-word entity linking below has a real chance of
+        matching multi-word KB labels like "cpu_usage".
+        """
+        for chunk in doc.noun_chunks:
+            if token in chunk:
+                return chunk.text.strip()
+
+        entity_tokens = [token]
+        for child in token.children:
+            if child.dep_ in ("compound", "amod"):
+                entity_tokens.insert(0, child)
+        return " ".join(t.text for t in entity_tokens).strip()
+
+    async def _parse_text(self, text: str) -> list[Triplet]:
         """Extract triplets from free-form text using spaCy's dependency parse"""
         doc = self.nlp(text)
 
@@ -316,14 +344,14 @@ class SemanticParser:
             for token in sent:
                 # Look for subject-verb-object patterns
                 if token.dep_ in ('nsubj', 'nsubjpass'):
-                    subject = token.text
+                    subject = self._extract_entity_text(token, doc)
                     predicate = token.head.text
                     object_ = None
 
                     # Find object
                     for child in token.head.children:
                         if child.dep_ in ('dobj', 'attr', 'pobj'):
-                            object_ = child.text
+                            object_ = self._extract_entity_text(child, doc)
                             break
 
                     if object_:
@@ -340,7 +368,7 @@ class SemanticParser:
 
         return triplets
 
-    async def _parse_assertion(self, assertion: str) -> List[Triplet]:
+    async def _parse_assertion(self, assertion: str) -> list[Triplet]:
         """Parse a single causal assertion into triplets"""
         # Use the same parsing logic as _parse_text
         return await self._parse_text(assertion)
@@ -355,9 +383,11 @@ class SemanticParser:
         if linked and linked[0]['score'] > 0.7:
             return linked[0]['uri']
         else:
-            # Create a local URI
+            # Create a local URI. Must be a full absolute IRI (not the
+            # prefixed name "local:foo") since callers wrap this in
+            # `<...>` - see the predicate_templates comment above for why.
             normalized = re.sub(r'[^a-zA-Z0-9]', '_', entity_text.lower())
-            return f"local:{normalized}"
+            return f"http://local.caf/{normalized}"
 
     def _get_predicate_uri(self, predicate_text: str) -> str:
         """
@@ -371,11 +401,11 @@ class SemanticParser:
             if template_key in predicate_lower:
                 return uri
 
-        # Default relation
+        # Default relation (full absolute IRI, see predicate_templates comment)
         normalized = re.sub(r'[^a-zA-Z0-9]', '_', predicate_lower)
-        return f"relation:{normalized}"
+        return f"http://local.caf/relation/{normalized}"
 
-    def _generate_sparql(self, triplets: List[Triplet]) -> str:
+    def _generate_sparql(self, triplets: list[Triplet]) -> str:
         """
         Generate SPARQL SELECT query from triplets.
 
@@ -389,7 +419,7 @@ class SemanticParser:
         where_patterns = []
         for t in triplets:
             # Use variable if it's a query, else use literal
-            obj_var = "?o" if t.object_.startswith("local:") else f"<{t.object_}>"
+            obj_var = "?o" if t.object_.startswith("http://local.caf/") else f"<{t.object_}>"
             where_patterns.append(
                 f"<{t.subject}> <{t.predicate}> {obj_var} ."
             )
@@ -425,7 +455,7 @@ class ParsedResult:
 
     def __init__(
         self,
-        triplets: List[Triplet],
+        triplets: list[Triplet],
         sparql_query: str,
         source_text: str
     ):

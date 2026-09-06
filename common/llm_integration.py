@@ -15,7 +15,6 @@ import sys
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
 from urllib import request as urllib_request
 from urllib import error as urllib_error
 
@@ -49,7 +48,7 @@ if transformers_logging is not None:
 from experiments.caf_algorithm import InferenceLayer
 
 
-def _env_int(name: str, default: Optional[int] = None) -> Optional[int]:
+def _env_int(name: str, default: int | None = None) -> int | None:
     value = os.getenv(name)
     if value is None or value == "":
         return default
@@ -87,8 +86,8 @@ class LLMConfig:
     backend: str = "hf"
     ollama_base_url: str = "http://localhost:11434"
     request_timeout: int = 300
-    ollama_num_ctx: Optional[int] = None
-    ollama_num_thread: Optional[int] = None
+    ollama_num_ctx: int | None = None
+    ollama_num_thread: int | None = None
 
 
 class HuggingFaceCausalLMLayer(InferenceLayer):
@@ -107,7 +106,7 @@ class HuggingFaceCausalLMLayer(InferenceLayer):
     - Qwen/Qwen3-14B, Qwen/Qwen2.5-7B-Instruct
     """
 
-    def __init__(self, config: Optional[LLMConfig] = None):
+    def __init__(self, config: LLMConfig | None = None):
         self.config = config or LLMConfig()
         self.model = None
         self.tokenizer = None
@@ -203,7 +202,7 @@ class HuggingFaceCausalLMLayer(InferenceLayer):
     def _format_prompt(
         self,
         prompt: str,
-        constraints: Optional[List[str]] = None
+        constraints: list[str] | None = None
     ) -> str:
         """
         Format prompt for the model's chat template, with optional constraints.
@@ -267,7 +266,7 @@ Your responses should be clear, well-reasoned, and avoid contradictions."""
     def generate(
         self,
         prompt: str,
-        constraints: Optional[List[str]] = None
+        constraints: list[str] | None = None
     ) -> str:
         """
         Generate a response using the loaded model.
@@ -302,11 +301,11 @@ Your responses should be clear, well-reasoned, and avoid contradictions."""
 
     def generate_batch(
         self,
-        prompts: List[str],
-        constraints: Optional[List[List[str]]] = None,
-        batch_size: Optional[int] = None,
-    ) -> List[str]:
-        formatted_prompts: List[str] = []
+        prompts: list[str],
+        constraints: list[list[str]] | None = None,
+        batch_size: int | None = None,
+    ) -> list[str]:
+        formatted_prompts: list[str] = []
         for idx, prompt in enumerate(prompts):
             per_constraints = constraints[idx] if constraints and idx < len(constraints) else None
             formatted_prompts.append(self._format_prompt(prompt, per_constraints))
@@ -322,7 +321,7 @@ Your responses should be clear, well-reasoned, and avoid contradictions."""
             batch_size=batch_size,
         )
 
-        responses: List[str] = []
+        responses: list[str] = []
         for output in outputs:
             if isinstance(output, list):
                 if output:
@@ -346,7 +345,7 @@ Your responses should be clear, well-reasoned, and avoid contradictions."""
 class OllamaLayer(InferenceLayer):
     """Inference layer backed by a locally running Ollama server."""
 
-    def __init__(self, config: Optional[LLMConfig] = None):
+    def __init__(self, config: LLMConfig | None = None):
         self.config = config or LLMConfig(
             model_name="gemma4:e4b",
             backend="ollama",
@@ -359,7 +358,7 @@ class OllamaLayer(InferenceLayer):
     def _format_prompt(
         self,
         prompt: str,
-        constraints: Optional[List[str]] = None,
+        constraints: list[str] | None = None,
     ) -> str:
         system_message = (
             "You are a helpful AI assistant that provides accurate, logically consistent "
@@ -374,7 +373,7 @@ class OllamaLayer(InferenceLayer):
     def generate(
         self,
         prompt: str,
-        constraints: Optional[List[str]] = None,
+        constraints: list[str] | None = None,
     ) -> str:
         payload = {
             "model": self.config.model_name,
@@ -419,11 +418,11 @@ class OllamaLayer(InferenceLayer):
 
     def generate_batch(
         self,
-        prompts: List[str],
-        constraints: Optional[List[List[str]]] = None,
-        batch_size: Optional[int] = None,
-    ) -> List[str]:
-        results: List[str] = []
+        prompts: list[str],
+        constraints: list[list[str]] | None = None,
+        batch_size: int | None = None,
+    ) -> list[str]:
+        results: list[str] = []
         for idx, prompt in enumerate(prompts):
             per_constraints = constraints[idx] if constraints and idx < len(constraints) else None
             results.append(self.generate(prompt, per_constraints))
@@ -456,16 +455,16 @@ class OpenSourceLlamaLayer(InferenceLayer):
     def generate(
         self,
         prompt: str,
-        constraints: Optional[List[str]] = None
+        constraints: list[str] | None = None
     ) -> str:
         return self.hf_layer.generate(prompt, constraints)
 
     def generate_batch(
         self,
-        prompts: List[str],
-        constraints: Optional[List[List[str]]] = None,
-        batch_size: Optional[int] = None,
-    ) -> List[str]:
+        prompts: list[str],
+        constraints: list[list[str]] | None = None,
+        batch_size: int | None = None,
+    ) -> list[str]:
         return self.hf_layer.generate_batch(prompts, constraints, batch_size)
 
 

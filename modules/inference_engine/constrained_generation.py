@@ -9,7 +9,7 @@ Key Innovation:
 - Bias logits to prefer tokens aligned with KB
 - Discard tokens that would contradict ground truth
 """
-from typing import List, Dict, Any, Optional, Set, Tuple
+from typing import Any
 import torch
 from transformers import LogitsProcessor
 from SPARQLWrapper import SPARQLWrapper, JSON
@@ -46,7 +46,7 @@ class RDFConstraintProcessor(LogitsProcessor):
         self.sparql.setReturnFormat(JSON)
 
         # Cache for KB queries (avoid repeated queries)
-        self._kb_cache: Dict[str, List[str]] = {}
+        self._kb_cache: dict[str, list[str]] = {}
 
         logger.info(f"RDFConstraintProcessor initialized with penalty={penalty_weight}")
 
@@ -85,7 +85,7 @@ class RDFConstraintProcessor(LogitsProcessor):
 
         return scores
 
-    def _get_constraints_for_text(self, text: str) -> Dict[str, Any]:
+    def _get_constraints_for_text(self, text: str) -> dict[str, Any]:
         """
         Extract entities from text and query KB for relevant constraints.
 
@@ -112,7 +112,7 @@ class RDFConstraintProcessor(LogitsProcessor):
 
         return constraints
 
-    def _extract_entities(self, text: str) -> List[str]:
+    def _extract_entities(self, text: str) -> list[str]:
         """
         Extract potential entities from text.
 
@@ -131,7 +131,7 @@ class RDFConstraintProcessor(LogitsProcessor):
         return list(set(entities))[:3]  # Limit to 3 entities for performance
 
     @lru_cache(maxsize=100)
-    def _query_entity_facts(self, entity: str) -> List[Dict[str, str]]:
+    def _query_entity_facts(self, entity: str) -> list[dict[str, str]]:
         """
         Query Fuseki for facts about an entity.
 
@@ -183,7 +183,7 @@ LIMIT 10
         self,
         scores: torch.FloatTensor,
         partial_text: str,
-        constraints: Dict[str, Any]
+        constraints: dict[str, Any]
     ) -> torch.FloatTensor:
         """
         Apply KB constraints to logits.
@@ -214,7 +214,7 @@ LIMIT 10
         self,
         partial_text: str,
         next_token: str,
-        constraints: Dict[str, Any]
+        constraints: dict[str, Any]
     ) -> bool:
         """
         Check if adding next_token would violate KB constraints.
@@ -275,8 +275,8 @@ class ConstrainedInferenceEngine:
         self,
         prompt: str,
         config,
-        constraints: Optional[List[str]] = None
-    ) -> Dict[str, Any]:
+        constraints: list[str] | None = None
+    ) -> dict[str, Any]:
         """
         Generate text with RDF constraint satisfaction.
 
@@ -325,7 +325,7 @@ class ConstrainedInferenceEngine:
         prompt: str,
         config,
         constraint_processor: RDFConstraintProcessor
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Generate using HuggingFace with custom logit processor.
         """
@@ -334,19 +334,16 @@ class ConstrainedInferenceEngine:
             return_tensors="pt"
         ).to(self.base_engine.model.device)
 
-        loop = asyncio.get_event_loop()
-        outputs = await loop.run_in_executor(
-            None,
-            lambda: self.base_engine.model.generate(
-                **inputs,
-                max_new_tokens=config.max_tokens,
-                temperature=config.temperature,
-                top_p=config.top_p,
-                top_k=config.top_k,
-                repetition_penalty=config.repetition_penalty,
-                do_sample=True,
-                logits_processor=[constraint_processor]  # KEY: Apply RDF constraints
-            )
+        outputs = await asyncio.to_thread(
+            self.base_engine.model.generate,
+            **inputs,
+            max_new_tokens=config.max_tokens,
+            temperature=config.temperature,
+            top_p=config.top_p,
+            top_k=config.top_k,
+            repetition_penalty=config.repetition_penalty,
+            do_sample=True,
+            logits_processor=[constraint_processor]  # KEY: Apply RDF constraints
         )
 
         generated_text = self.base_engine.tokenizer.decode(

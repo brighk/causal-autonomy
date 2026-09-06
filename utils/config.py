@@ -2,9 +2,8 @@
 Configuration management using Pydantic Settings.
 Loads configuration from environment variables and .env files.
 """
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
-from typing import Optional
 from functools import lru_cache
 
 
@@ -70,7 +69,7 @@ class Settings(BaseSettings):
     )
 
     # Security
-    api_key: Optional[str] = Field(default=None, description="API authentication key")
+    api_key: str | None = Field(default=None, description="API authentication key")
     enable_cors: bool = Field(default=True, description="Enable CORS")
 
     # Data
@@ -81,10 +80,11 @@ class Settings(BaseSettings):
     request_timeout: int = Field(default=300, description="Request timeout in seconds")
     max_concurrent_requests: int = Field(default=10, description="Max concurrent requests")
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+    )
 
 
 @lru_cache()

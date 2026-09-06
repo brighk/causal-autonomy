@@ -25,7 +25,7 @@ import json
 import argparse
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -54,7 +54,7 @@ class InterventionCAFEvaluator(CounterBenchEvaluator):
 
     def process_example(
         self,
-        example: Dict[str, Any],
+        example: dict[str, Any],
         verbose: bool = False
     ) -> CounterBenchResult:
         """

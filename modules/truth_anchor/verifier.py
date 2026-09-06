@@ -5,7 +5,7 @@ Protocol: SPARQL 1.1 over HTTP
 
 Provides deterministic verification by grounding LLM outputs in RDF knowledge graphs.
 """
-from typing import List, Dict, Any, Optional
+from typing import Any
 from SPARQLWrapper import SPARQLWrapper, JSON
 from rdflib import Graph, Namespace, URIRef, Literal
 from rdflib.namespace import RDF, RDFS
@@ -39,7 +39,7 @@ class TruthAnchor:
 
     async def verify(
         self,
-        triplets: List[Triplet],
+        triplets: list[Triplet],
         threshold: float = 0.8
     ) -> VerificationResult:
         """
@@ -140,7 +140,7 @@ LIMIT 10
 
         return query
 
-    async def _execute_query(self, query: str) -> List[Dict[str, Any]]:
+    async def _execute_query(self, query: str) -> list[dict[str, Any]]:
         """
         Execute SPARQL query against Fuseki.
 
@@ -169,9 +169,9 @@ LIMIT 10
     def _verify_object_match(
         self,
         expected_object: str,
-        results: List[Dict[str, Any]],
+        results: list[dict[str, Any]],
         threshold: float
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Verify if the expected object matches any result using:
         1. Exact match
