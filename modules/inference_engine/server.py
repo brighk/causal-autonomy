@@ -8,6 +8,7 @@ from typing import Optional, List
 import asyncio
 import sys
 from pathlib import Path
+from contextlib import asynccontextmanager
 from loguru import logger
 
 # framework1/, for utils.*
@@ -17,11 +18,8 @@ from .engine import InferenceEngine, GenerationConfig
 from utils.config import get_settings
 
 
-app = FastAPI(title="CAF Inference Engine", version="1.0.0")
-
 # Global engine instance
 engine: Optional[InferenceEngine] = None
-
 
 class GenerateRequest(BaseModel):
     prompt: str
@@ -31,9 +29,8 @@ class GenerateRequest(BaseModel):
     session_id: Optional[str] = None
     constraints: Optional[List[str]] = None
 
-
-@app.on_event("startup")
-async def startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     """Initialize the inference engine"""
     global engine
 
@@ -49,6 +46,13 @@ async def startup():
     )
 
     logger.info("Inference Engine ready")
+    yield
+
+app = FastAPI(
+    title="CAF Inference Engine", 
+    version="1.0.10",
+    lifespan=lifespan
+)
 
 
 @app.post("/generate")

@@ -95,17 +95,17 @@ class InferenceEngine:
         """
         system_prompt = """You are a reasoning agent that generates responses grounded in factual knowledge.
 
-For each response:
-1. Provide a clear, accurate answer
-2. State the causal relationships or facts that support your answer
-3. Use precise, verifiable statements
+        For each response:
+        1. Provide a clear, accurate answer
+        2. State the causal relationships or facts that support your answer
+        3. Use precise, verifiable statements
 
-Format your response as:
-ANSWER: [your response]
-CAUSAL_ASSERTIONS:
-- [assertion 1]
-- [assertion 2]
-..."""
+        Format your response as:
+        ANSWER: [your response]
+        CAUSAL_ASSERTIONS:
+        - [assertion 1]
+        - [assertion 2]
+        ..."""
 
         if constraints:
             constraint_text = "\n".join(f"- {c}" for c in constraints)

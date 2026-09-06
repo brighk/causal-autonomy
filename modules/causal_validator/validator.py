@@ -93,6 +93,11 @@ class CausalValidator:
         """
         violations = []
 
+        # Start from a clean graph so a previous request's triplets can't
+        # leak into this one's cycle/contradiction checks (the validator
+        # instance is shared across requests).
+        self.reset()
+
         # Build causal graph from verified triplets
         self._build_graph_from_triplets(verified_triplets)
 
