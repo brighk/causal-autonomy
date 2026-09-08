@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # Lean install only (no --extra api/llm/experiments): none of the
+      # test suite needs fastapi/torch/transformers - caval talks to
+      # Fuseki and to an already-running inference engine over plain HTTP,
+      # never in-process. Running the full suite against a lean install is
+      # itself a regression test for that claim.
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Lint
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      # Manual `docker run`, not GitHub's declarative `services:` block:
+      # services start before `actions/checkout`, so there's nothing yet
+      # to mount config/fuseki/assembler.ttl from - this matches
+      # deployment/docker-compose.yml's setup exactly, just started by hand
+      # after checkout instead of via compose.
+      #
+      # assembler.ttl points TDB2 at /fuseki/databases/dataset, but TDB2
+      # doesn't create that directory itself on first run (confirmed by
+      # reproducing the failure locally) - it has to already exist before
+      # Fuseki starts, with permissions open enough for the container's
+      # non-root user to write into it, or startup fails with a
+      # near-useless "No such file or directory" IOException.
+      - name: Start Fuseki
+        run: |
+          mkdir -p /tmp/fuseki-databases/dataset
+          chmod -R 777 /tmp/fuseki-databases
+          docker run -d --name fuseki -p 3030:3030 \
+            -e ADMIN_PASSWORD=ci-test-password \
+            -e JVM_ARGS=-Xmx2g \
+            -v /tmp/fuseki-databases:/fuseki/databases \
+            -v "${{ github.workspace }}/config/fuseki/assembler.ttl:/fuseki-base/configuration/assembler.ttl" \
+            secoresearch/fuseki:latest
+
+      - name: Wait for Fuseki
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf "http://localhost:3030/\$/ping" > /dev/null; then
+              echo "Fuseki is up"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Fuseki did not become ready in time"
+          docker logs fuseki
+          exit 1
+
+      - name: Run tests
+        run: uv run pytest -v
+
+      - name: Stop Fuseki
+        if: always()
+        run: docker rm -f fuseki

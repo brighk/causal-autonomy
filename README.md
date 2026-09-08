@@ -13,10 +13,23 @@ There are three ways to drive this: the `caval` library (`caval/`, a thin wrappe
 
 ## Setup
 
+`caval` itself is lightweight - parsing, entity linking, and SPARQL
+verification only, no web framework or ML stack (it talks to Fuseki and to
+an already-running inference engine over plain HTTP). The FastAPI gateway,
+local model loading, and the `experiments/` benchmark harness are optional
+extras so a `caval`-only consumer doesn't pull in a multi-GB ML stack they
+don't need:
+
 ```bash
-uv sync
-uv run python -m spacy download en_core_web_sm   # triplet parsing (modules/semantic_parser, KnowledgeBaseFVL)
+uv sync                          # caval only - lean, no torch/fastapi/etc.
+uv sync --extra api              # + the FastAPI gateway (api/main.py)
+uv sync --extra llm              # + local model loading (modules/inference_engine/server.py)
+uv sync --extra experiments      # + the experiments/ benchmark harness
+uv sync --all-extras             # everything - what you want for full local dev on this repo
 ```
+
+`en_core_web_sm` (spaCy's model, needed for triplet parsing) installs
+automatically as part of the base `caval` dependencies via `[tool.uv.sources]`.
 
 
 ## Development checks
@@ -93,13 +106,17 @@ curl -X POST http://localhost:3030/dataset/update \
 `caval` (`caval/`) wraps the `api/`+`modules/` pipeline as a plain importable
 class - no FastAPI service to run yourself, but the LLM still runs as its
 own background process (for GPU isolation) and Fuseki still runs via
-docker-compose. Three things running, few lines of code:
+docker-compose. `pip install caval`/`uv add caval` pulls in only what
+`caval` itself needs (spaCy, SPARQLWrapper, httpx, pydantic) - no torch,
+no FastAPI, nothing GPU-related - since it talks to Fuseki and to the
+already-running inference engine below over plain HTTP, not in-process.
+Three things running, few lines of code:
 
 ```bash
 # 1. Fuseki
 FUSEKI_ADMIN_PASSWORD=<pick-something> docker compose -f deployment/docker-compose.yml up -d
 
-# 2. The LLM, in a separate terminal
+# 2. The LLM, in a separate terminal (needs the `llm` extra: uv sync --extra llm)
 uv run python -m modules.inference_engine.server
 ```
 
