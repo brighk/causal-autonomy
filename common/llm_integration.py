@@ -8,17 +8,16 @@ Supports:
 - Configurable generation parameters
 """
 
-import os
 import json
+import os
 import re
-import sys
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from urllib import request as urllib_request
 from urllib import error as urllib_error
+from urllib import request as urllib_request
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+from .inference_layer import InferenceLayer
 
 try:
     import torch
@@ -31,6 +30,8 @@ try:
         AutoTokenizer,
         BitsAndBytesConfig,
         pipeline,
+    )
+    from transformers import (
         logging as transformers_logging,
     )
 except Exception:  # pragma: no cover - exercised indirectly through runtime selection
@@ -44,8 +45,6 @@ except Exception:  # pragma: no cover - exercised indirectly through runtime sel
 warnings.filterwarnings("ignore", message=".*max_new_tokens.*max_length.*")
 if transformers_logging is not None:
     transformers_logging.set_verbosity_error()
-
-from experiments.caf_algorithm import InferenceLayer
 
 
 def _env_int(name: str, default: int | None = None) -> int | None:
@@ -74,6 +73,7 @@ def _strip_think_block(text: str) -> str:
 @dataclass
 class LLMConfig:
     """Configuration for local LLM backends."""
+
     model_name: str = "meta-llama/Llama-2-7b-chat-hf"  # or Llama-3-8b-Instruct
     device: str = "cuda"  # Use GPU
     max_new_tokens: int = 512
@@ -115,7 +115,12 @@ class HuggingFaceCausalLMLayer(InferenceLayer):
 
     def _load_model(self):
         """Load the model and tokenizer."""
-        if torch is None or AutoTokenizer is None or AutoModelForCausalLM is None or pipeline is None:
+        if (
+            torch is None
+            or AutoTokenizer is None
+            or AutoModelForCausalLM is None
+            or pipeline is None
+        ):
             raise RuntimeError(
                 "Hugging Face inference was requested, but required dependencies are missing. "
                 "Install torch and transformers, or use an Ollama-backed model such as 'gemma4:e4b'."
@@ -130,7 +135,9 @@ class HuggingFaceCausalLMLayer(InferenceLayer):
 
         if torch.cuda.is_available():
             print(f"GPU: {torch.cuda.get_device_name(0)}")
-            print(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB")
+            print(
+                f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB"
+            )
 
         # Configure quantization for memory efficiency
         quantization_config = None
@@ -139,7 +146,7 @@ class HuggingFaceCausalLMLayer(InferenceLayer):
                 load_in_4bit=True,
                 bnb_4bit_compute_dtype=torch.float16,
                 bnb_4bit_use_double_quant=True,
-                bnb_4bit_quant_type="nf4"
+                bnb_4bit_quant_type="nf4",
             )
         elif self.config.load_in_8bit:
             quantization_config = BitsAndBytesConfig(
@@ -148,8 +155,7 @@ class HuggingFaceCausalLMLayer(InferenceLayer):
 
         # Load tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(
-            self.config.model_name,
-            trust_remote_code=self.config.trust_remote_code
+            self.config.model_name, trust_remote_code=self.config.trust_remote_code
         )
 
         # Ensure pad token is set
@@ -159,7 +165,9 @@ class HuggingFaceCausalLMLayer(InferenceLayer):
         # Load model
         model_kwargs = {
             "trust_remote_code": self.config.trust_remote_code,
-            "torch_dtype": torch.float16 if self.config.device == "cuda" else torch.float32,
+            "torch_dtype": torch.float16
+            if self.config.device == "cuda"
+            else torch.float32,
         }
 
         if quantization_config is not None:
@@ -169,12 +177,9 @@ class HuggingFaceCausalLMLayer(InferenceLayer):
             # On small GPUs (e.g., 4GB), keep headroom and offload overflow to CPU.
             if self.config.device == "cuda" and torch.cuda.is_available():
                 total_mem_bytes = torch.cuda.get_device_properties(0).total_memory
-                total_mem_gib = max(1, int(total_mem_bytes / (1024 ** 3)))
+                total_mem_gib = max(1, int(total_mem_bytes / (1024**3)))
                 gpu_budget_gib = max(1, total_mem_gib - 1)
-                model_kwargs["max_memory"] = {
-                    0: f"{gpu_budget_gib}GiB",
-                    "cpu": "48GiB"
-                }
+                model_kwargs["max_memory"] = {0: f"{gpu_budget_gib}GiB", "cpu": "48GiB"}
                 offload_dir = Path(".hf_offload")
                 offload_dir.mkdir(parents=True, exist_ok=True)
                 model_kwargs["offload_folder"] = str(offload_dir)
@@ -183,8 +188,7 @@ class HuggingFaceCausalLMLayer(InferenceLayer):
             model_kwargs["device_map"] = self.config.device
 
         self.model = AutoModelForCausalLM.from_pretrained(
-            self.config.model_name,
-            **model_kwargs
+            self.config.model_name, **model_kwargs
         )
         if hasattr(self.model, "generation_config"):
             self.model.generation_config.max_new_tokens = self.config.max_new_tokens
@@ -199,11 +203,7 @@ class HuggingFaceCausalLMLayer(InferenceLayer):
 
         print(f"Model loaded successfully on {self.config.device}")
 
-    def _format_prompt(
-        self,
-        prompt: str,
-        constraints: list[str] | None = None
-    ) -> str:
+    def _format_prompt(self, prompt: str, constraints: list[str] | None = None) -> str:
         """
         Format prompt for the model's chat template, with optional constraints.
 
@@ -228,16 +228,17 @@ Your responses should be clear, well-reasoned, and avoid contradictions."""
 
 {prompt} [/INST]"""
         # For Llama 3 (uses different format)
-        elif "Llama-3" in self.config.model_name or "llama-3" in self.config.model_name.lower():
+        elif (
+            "Llama-3" in self.config.model_name
+            or "llama-3" in self.config.model_name.lower()
+        ):
             # Llama 3 uses a different chat template
             messages = [
                 {"role": "system", "content": system_message},
-                {"role": "user", "content": prompt}
+                {"role": "user", "content": prompt},
             ]
             formatted_prompt = self.tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True
+                messages, tokenize=False, add_generation_prompt=True
             )
         elif "qwen" in self.config.model_name.lower():
             messages = [
@@ -266,7 +267,10 @@ Your responses should be clear, well-reasoned, and avoid contradictions."""
     def generate(
         self,
         prompt: str,
-        constraints: list[str] | None = None
+        constraints: list[str] | None = None,
+        max_new_tokens: int | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
     ) -> str:
         """
         Generate a response using the loaded model.
@@ -274,6 +278,12 @@ Your responses should be clear, well-reasoned, and avoid contradictions."""
         Args:
             prompt: Input prompt
             constraints: Optional list of constraints to inject
+            max_new_tokens, temperature, top_p: Optional per-call overrides
+                of the values fixed at construction time in self.config -
+                lets a caller serving per-request generation params (e.g.
+                modules/inference_engine/engine.py, which forwards a
+                per-HTTP-request GenerationConfig) reuse one loaded model
+                instead of rebuilding this layer per request.
 
         Returns:
             Generated response text
@@ -283,9 +293,13 @@ Your responses should be clear, well-reasoned, and avoid contradictions."""
         # Generate
         outputs = self.pipeline(
             formatted_prompt,
-            max_new_tokens=self.config.max_new_tokens,
-            temperature=self.config.temperature,
-            top_p=self.config.top_p,
+            max_new_tokens=max_new_tokens
+            if max_new_tokens is not None
+            else self.config.max_new_tokens,
+            temperature=temperature
+            if temperature is not None
+            else self.config.temperature,
+            top_p=top_p if top_p is not None else self.config.top_p,
             do_sample=self.config.do_sample,
             num_return_sequences=1,
             return_full_text=False,  # Only return generated text
@@ -307,7 +321,9 @@ Your responses should be clear, well-reasoned, and avoid contradictions."""
     ) -> list[str]:
         formatted_prompts: list[str] = []
         for idx, prompt in enumerate(prompts):
-            per_constraints = constraints[idx] if constraints and idx < len(constraints) else None
+            per_constraints = (
+                constraints[idx] if constraints and idx < len(constraints) else None
+            )
             formatted_prompts.append(self._format_prompt(prompt, per_constraints))
 
         outputs = self.pipeline(
@@ -325,18 +341,24 @@ Your responses should be clear, well-reasoned, and avoid contradictions."""
         for output in outputs:
             if isinstance(output, list):
                 if output:
-                    responses.append(_strip_think_block(str(output[0].get("generated_text", ""))).strip())
+                    responses.append(
+                        _strip_think_block(
+                            str(output[0].get("generated_text", ""))
+                        ).strip()
+                    )
                 else:
                     responses.append("")
             else:
-                responses.append(_strip_think_block(str(output.get("generated_text", ""))).strip())
+                responses.append(
+                    _strip_think_block(str(output.get("generated_text", ""))).strip()
+                )
         return responses
 
     def __del__(self):
         """Clean up GPU memory when object is destroyed."""
-        if hasattr(self, 'model') and self.model is not None:
+        if hasattr(self, "model") and self.model is not None:
             del self.model
-        if hasattr(self, 'pipeline') and self.pipeline is not None:
+        if hasattr(self, "pipeline") and self.pipeline is not None:
             del self.pipeline
         if torch is not None and torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -396,7 +418,9 @@ class OllamaLayer(InferenceLayer):
             method="POST",
         )
         try:
-            with urllib_request.urlopen(req, timeout=self.config.request_timeout) as response:
+            with urllib_request.urlopen(
+                req, timeout=self.config.request_timeout
+            ) as response:
                 data = json.loads(response.read().decode("utf-8"))
         except urllib_error.HTTPError as exc:
             detail = ""
@@ -424,7 +448,9 @@ class OllamaLayer(InferenceLayer):
     ) -> list[str]:
         results: list[str] = []
         for idx, prompt in enumerate(prompts):
-            per_constraints = constraints[idx] if constraints and idx < len(constraints) else None
+            per_constraints = (
+                constraints[idx] if constraints and idx < len(constraints) else None
+            )
             results.append(self.generate(prompt, per_constraints))
         return results
 
@@ -443,20 +469,14 @@ class OpenSourceLlamaLayer(InferenceLayer):
         self,
         model_name: str = "NousResearch/Llama-2-7b-chat-hf",
         device: str = "cuda",
-        load_in_4bit: bool = False
+        load_in_4bit: bool = False,
     ):
         config = LLMConfig(
-            model_name=model_name,
-            device=device,
-            load_in_4bit=load_in_4bit
+            model_name=model_name, device=device, load_in_4bit=load_in_4bit
         )
         self.hf_layer = HuggingFaceCausalLMLayer(config)
 
-    def generate(
-        self,
-        prompt: str,
-        constraints: list[str] | None = None
-    ) -> str:
+    def generate(self, prompt: str, constraints: list[str] | None = None) -> str:
         return self.hf_layer.generate(prompt, constraints)
 
     def generate_batch(
@@ -473,7 +493,7 @@ def create_causal_lm_layer(
     model_size: str = "7b",
     use_4bit: bool = False,
     use_8bit: bool = False,
-    open_source: bool = True
+    open_source: bool = True,
 ) -> InferenceLayer:
     """
     Factory function to create an inference layer (HuggingFace or Ollama backend).
@@ -528,7 +548,17 @@ def create_causal_lm_layer(
         )
 
     # Treat unknown colon-tagged models as Ollama model names, e.g. gemma4:e4b.
-    known_hf_aliases = {"tiny", "phi2", "mistral", "qwen7b", "qwen14b", "qwen3-14b", "7b", "8b", "13b"}
+    known_hf_aliases = {
+        "tiny",
+        "phi2",
+        "mistral",
+        "qwen7b",
+        "qwen14b",
+        "qwen3-14b",
+        "7b",
+        "8b",
+        "13b",
+    }
     if ":" in model_size and model_size not in known_hf_aliases:
         return OllamaLayer(
             LLMConfig(
@@ -572,7 +602,7 @@ def create_causal_lm_layer(
             required = 12
 
     if torch is not None and torch.cuda.is_available():
-        total_mem_gib = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+        total_mem_gib = torch.cuda.get_device_properties(0).total_memory / (1024**3)
         if total_mem_gib < required:
             allow_fallback = os.getenv("CAF_ALLOW_MODEL_FALLBACK", "0") == "1"
             if allow_fallback and model_size != "tiny":
@@ -662,7 +692,7 @@ if __name__ == "__main__":
     constraints = [
         "Focus on the chemical equation",
         "Mention chlorophyll",
-        "Keep response under 3 sentences"
+        "Keep response under 3 sentences",
     ]
     response2 = llm.generate(prompt2, constraints)
     print(f"Prompt: {prompt2}")

@@ -30,18 +30,20 @@ Output: Verified Response Y* or FAIL
 12: return DE.adjudicate(Y_T, results)      // Final decision
 """
 
+import random
 import re
 import time
-import random
-from dataclasses import dataclass, field
-from typing import Any
-from enum import Enum
-import json
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any
+
+from common.inference_layer import InferenceLayer
 
 
 class VerificationStatus(Enum):
     """Status of verification result."""
+
     VERIFIED = "verified"
     PARTIAL = "partial"
     FAILED = "failed"
@@ -50,6 +52,7 @@ class VerificationStatus(Enum):
 
 class AdjudicationDecision(Enum):
     """Decision Engine adjudication outcomes."""
+
     ACCEPT = "accept"
     REJECT = "reject"
     ACCEPT_WITH_CAVEATS = "accept_with_caveats"
@@ -58,6 +61,7 @@ class AdjudicationDecision(Enum):
 @dataclass
 class RDFTriplet:
     """An RDF triplet extracted from LLM output."""
+
     subject: str
     predicate: str
     obj: str  # 'object' is reserved
@@ -75,6 +79,7 @@ class RDFTriplet:
 @dataclass
 class VerificationResult:
     """Result of SPARQL verification."""
+
     triplet: RDFTriplet
     status: VerificationStatus
     kb_support: bool
@@ -87,6 +92,7 @@ class VerificationResult:
 @dataclass
 class IterationLog:
     """Log entry for a single CAF iteration."""
+
     iteration: int
     draft_response: str
     extracted_triplets: list[RDFTriplet]
@@ -99,6 +105,7 @@ class IterationLog:
 @dataclass
 class CAFConfig:
     """Configuration for CAF loop."""
+
     max_iterations: int = 5
     verification_threshold: float = 0.8
     contradiction_penalty: float = 0.5
@@ -111,6 +118,7 @@ class CAFConfig:
 @dataclass
 class CAFOutput:
     """Complete output of CAF loop execution."""
+
     final_response: str
     decision: AdjudicationDecision
     iterations_used: int
@@ -119,32 +127,6 @@ class CAFOutput:
     total_duration_ms: float
     constraints_applied: list[str]
     metadata: dict = field(default_factory=dict)
-
-
-class InferenceLayer(ABC):
-    """Abstract Inference Layer (IL) interface."""
-
-    @abstractmethod
-    def generate(
-        self,
-        prompt: str,
-        constraints: list[str] | None = None
-    ) -> str:
-        """Generate a response, optionally with constraints."""
-        pass
-
-    def generate_batch(
-        self,
-        prompts: list[str],
-        constraints: list[list[str]] | None = None,
-        batch_size: int | None = None,
-    ) -> list[str]:
-        """Generate responses for a batch of prompts."""
-        results: list[str] = []
-        for idx, prompt in enumerate(prompts):
-            per_constraints = constraints[idx] if constraints and idx < len(constraints) else None
-            results.append(self.generate(prompt, per_constraints))
-        return results
 
 
 class FormalVerificationLayer(ABC):
@@ -157,10 +139,7 @@ class FormalVerificationLayer(ABC):
 
     @abstractmethod
     def verify(
-        self,
-        triplets: list[RDFTriplet],
-        knowledge_base: Any,
-        query: str | None = None
+        self, triplets: list[RDFTriplet], knowledge_base: Any, query: str | None = None
     ) -> list[VerificationResult]:
         """Verify triplets against knowledge base via SPARQL.
 
@@ -180,7 +159,7 @@ class DecisionEngine(ABC):
         response: str,
         results: list[VerificationResult],
         score: float,
-        threshold: float
+        threshold: float,
     ) -> AdjudicationDecision:
         """Make final accept/reject decision."""
         pass
@@ -189,6 +168,7 @@ class DecisionEngine(ABC):
 # ============================================================================
 # Simulated Implementations for Experimentation
 # ============================================================================
+
 
 class SimulatedInferenceLayer(InferenceLayer):
     """
@@ -202,18 +182,14 @@ class SimulatedInferenceLayer(InferenceLayer):
         self,
         base_accuracy: float = 0.7,
         constraint_improvement: float = 0.15,
-        noise_factor: float = 0.1
+        noise_factor: float = 0.1,
     ):
         self.base_accuracy = base_accuracy
         self.constraint_improvement = constraint_improvement
         self.noise_factor = noise_factor
         self.generation_count = 0
 
-    def generate(
-        self,
-        prompt: str,
-        constraints: list[str] | None = None
-    ) -> str:
+    def generate(self, prompt: str, constraints: list[str] | None = None) -> str:
         """
         Generate a simulated response.
 
@@ -226,7 +202,7 @@ class SimulatedInferenceLayer(InferenceLayer):
         if constraints:
             effective_accuracy = min(
                 self.base_accuracy + self.constraint_improvement * len(constraints),
-                0.95
+                0.95,
             )
         else:
             effective_accuracy = self.base_accuracy
@@ -262,12 +238,14 @@ class SimulatedFVL(FormalVerificationLayer):
         triplets = []
 
         for i in range(num_triplets):
-            triplets.append(RDFTriplet(
-                subject=f"entity_{i}",
-                predicate=f"relation_{i % 3}",
-                obj=f"entity_{i + 1}",
-                confidence=random.uniform(0.6, 1.0)
-            ))
+            triplets.append(
+                RDFTriplet(
+                    subject=f"entity_{i}",
+                    predicate=f"relation_{i % 3}",
+                    obj=f"entity_{i + 1}",
+                    confidence=random.uniform(0.6, 1.0),
+                )
+            )
 
         return triplets
 
@@ -275,7 +253,7 @@ class SimulatedFVL(FormalVerificationLayer):
         self,
         triplets: list[RDFTriplet],
         knowledge_base: Any,
-        accuracy_hint: float = 0.7
+        accuracy_hint: float = 0.7,
     ) -> list[VerificationResult]:
         """
         Verify triplets with simulated SPARQL queries.
@@ -310,13 +288,15 @@ class SimulatedFVL(FormalVerificationLayer):
                 contradiction = True
                 score = 0.0
 
-            results.append(VerificationResult(
-                triplet=triplet,
-                status=status,
-                kb_support=kb_support,
-                contradiction_found=contradiction,
-                confidence_score=score
-            ))
+            results.append(
+                VerificationResult(
+                    triplet=triplet,
+                    status=status,
+                    kb_support=kb_support,
+                    contradiction_found=contradiction,
+                    confidence_score=score,
+                )
+            )
 
         return results
 
@@ -329,7 +309,7 @@ class SimulatedDecisionEngine(DecisionEngine):
         response: str,
         results: list[VerificationResult],
         score: float,
-        threshold: float
+        threshold: float,
     ) -> AdjudicationDecision:
         """Make adjudication decision based on verification results."""
 
@@ -351,6 +331,7 @@ class SimulatedDecisionEngine(DecisionEngine):
 # ============================================================================
 # Main CAF Loop Implementation
 # ============================================================================
+
 
 class CAFLoop:
     """
@@ -374,7 +355,7 @@ class CAFLoop:
         config: CAFConfig | None = None,
         inference_layer: InferenceLayer | None = None,
         verification_layer: FormalVerificationLayer | None = None,
-        decision_engine: DecisionEngine | None = None
+        decision_engine: DecisionEngine | None = None,
     ):
         self.config = config or CAFConfig()
 
@@ -383,10 +364,7 @@ class CAFLoop:
         self.fvl = verification_layer or SimulatedFVL()
         self.de = decision_engine or SimulatedDecisionEngine()
 
-    def compute_score(
-        self,
-        results: list[VerificationResult]
-    ) -> float:
+    def compute_score(self, results: list[VerificationResult]) -> float:
         """
         Compute overall verification score from results.
 
@@ -398,17 +376,16 @@ class CAFLoop:
 
         verified = sum(1 for r in results if r.status == VerificationStatus.VERIFIED)
         partial = sum(1 for r in results if r.status == VerificationStatus.PARTIAL)
-        contradictions = sum(1 for r in results if r.status == VerificationStatus.CONTRADICTION)
+        contradictions = sum(
+            1 for r in results if r.status == VerificationStatus.CONTRADICTION
+        )
 
         score = (verified + self.config.partial_match_weight * partial) / len(results)
         score -= self.config.contradiction_penalty * (contradictions / len(results))
 
         return max(0.0, min(1.0, score))
 
-    def extract_constraints(
-        self,
-        results: list[VerificationResult]
-    ) -> list[str]:
+    def extract_constraints(self, results: list[VerificationResult]) -> list[str]:
         """
         Extract constraint statements from failed verifications.
 
@@ -435,24 +412,16 @@ class CAFLoop:
                         expected = match.group(1).strip().lower()
                         break
                 if expected in {"yes", "no"}:
-                    constraints.append(
-                        f"Output ONLY one word: {expected}"
-                    )
+                    constraints.append(f"Output ONLY one word: {expected}")
                     constraints.append(
                         "Do not add explanations, dialogue, or extra text."
                     )
             elif result.status == VerificationStatus.PARTIAL:
-                constraints.append(
-                    f"Strengthen evidence for: {result.triplet}"
-                )
+                constraints.append(f"Strengthen evidence for: {result.triplet}")
 
         return constraints
 
-    def execute(
-        self,
-        prompt: str,
-        knowledge_base: Any = None
-    ) -> CAFOutput:
+    def execute(self, prompt: str, knowledge_base: Any = None) -> CAFOutput:
         """
         Execute the CAF iterative verification loop.
 
@@ -496,15 +465,17 @@ class CAFLoop:
 
             # Log iteration
             iter_duration = (time.time() - iter_start) * 1000
-            iteration_logs.append(IterationLog(
-                iteration=t,
-                draft_response=response,
-                extracted_triplets=triplets,
-                verification_results=results,
-                overall_score=score,
-                injected_constraints=current_constraints or [],
-                duration_ms=iter_duration
-            ))
+            iteration_logs.append(
+                IterationLog(
+                    iteration=t,
+                    draft_response=response,
+                    extracted_triplets=triplets,
+                    verification_results=results,
+                    overall_score=score,
+                    injected_constraints=current_constraints or [],
+                    duration_ms=iter_duration,
+                )
+            )
 
             # Check if threshold met
             if score >= self.config.verification_threshold:
@@ -519,7 +490,7 @@ class CAFLoop:
                     iteration_logs=iteration_logs,
                     total_duration_ms=total_duration,
                     constraints_applied=all_constraints,
-                    metadata={"early_termination": True}
+                    metadata={"early_termination": True},
                 )
 
             # Extract constraints for next iteration
@@ -528,10 +499,7 @@ class CAFLoop:
 
         # Final adjudication after max iterations
         final_decision = self.de.adjudicate(
-            response,
-            results,
-            score,
-            self.config.verification_threshold
+            response, results, score, self.config.verification_threshold
         )
 
         total_duration = (time.time() - start_time) * 1000
@@ -544,13 +512,11 @@ class CAFLoop:
             iteration_logs=iteration_logs,
             total_duration_ms=total_duration,
             constraints_applied=all_constraints,
-            metadata={"early_termination": False}
+            metadata={"early_termination": False},
         )
 
     def execute_with_baseline(
-        self,
-        prompt: str,
-        knowledge_base: Any = None
+        self, prompt: str, knowledge_base: Any = None
     ) -> tuple[CAFOutput, CAFOutput]:
         """
         Execute CAF and baseline (no verification) for comparison.
@@ -585,18 +551,20 @@ class CAFLoop:
             decision=AdjudicationDecision.ACCEPT,  # No verification
             iterations_used=1,
             final_score=score,
-            iteration_logs=[IterationLog(
-                iteration=1,
-                draft_response=response,
-                extracted_triplets=triplets,
-                verification_results=results,
-                overall_score=score,
-                injected_constraints=[],
-                duration_ms=baseline_duration
-            )],
+            iteration_logs=[
+                IterationLog(
+                    iteration=1,
+                    draft_response=response,
+                    extracted_triplets=triplets,
+                    verification_results=results,
+                    overall_score=score,
+                    injected_constraints=[],
+                    duration_ms=baseline_duration,
+                )
+            ],
             total_duration_ms=baseline_duration,
             constraints_applied=[],
-            metadata={"baseline": True}
+            metadata={"baseline": True},
         )
 
         return caf_output, baseline_output
@@ -729,7 +697,7 @@ if __name__ == "__main__":
     caf = CAFLoop()
     result = caf.execute("What causes rain to make roads slippery?")
 
-    print(f"\nResult:")
+    print("\nResult:")
     print(f"  Decision: {result.decision.value}")
     print(f"  Iterations: {result.iterations_used}")
     print(f"  Final Score: {result.final_score:.3f}")
