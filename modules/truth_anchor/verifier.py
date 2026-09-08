@@ -68,9 +68,31 @@ class TruthAnchor:
 
         matched_triplets = []
         contradictions = []
+        unverifiable = []
         total_similarity = 0.0
 
         for triplet in triplets:
+            # Entity linking already failed for subject and/or object (see
+            # Triplet.subject_linked/object_linked) - the value there is a
+            # fabricated http://local.caf/<text> URI, not a real KB entity.
+            # Querying it would almost always come back empty and read as
+            # "not found in knowledge base", implying we checked and the KB
+            # disagrees, when really we never identified what the claim was
+            # even referring to. Report that honestly instead, and skip the
+            # SPARQL round trip - it can't possibly resolve.
+            if not (triplet.subject_linked and triplet.object_linked):
+                unresolved = []
+                if not triplet.subject_linked:
+                    unresolved.append(f"subject '{triplet.subject}'")
+                if not triplet.object_linked:
+                    unresolved.append(f"object '{triplet.object_}'")
+                unverifiable.append(
+                    f"Triplet ({triplet.subject}, {triplet.predicate}, "
+                    f"{triplet.object_}): {' and '.join(unresolved)} could "
+                    f"not be confidently linked to a KB entity"
+                )
+                continue
+
             # Execute SPARQL query
             query = self._build_sparql_query(triplet)
 
@@ -113,6 +135,7 @@ class TruthAnchor:
             is_valid=is_valid,
             matched_triplets=matched_triplets,
             contradictions=contradictions,
+            unverifiable=unverifiable,
             similarity_score=avg_similarity,
             verification_method="sparql_fuzzy_match",
         )

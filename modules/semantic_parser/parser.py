@@ -281,9 +281,9 @@ class SemanticParser:
         self.entity_linker = EntityLinker(fuseki_endpoint)
 
         # Predicate templates (common relations). Values are full absolute
-        # URIs, not prefixed names ("causality:causes") - _generate_sparql
-        # and TruthAnchor._build_sparql_query both wrap these in `<...>`,
-        # and SPARQL/Turtle never expands a prefix inside an IRIREF, so a
+        # URIs, not prefixed names ("causality:causes") -
+        # TruthAnchor._build_sparql_query wraps these in `<...>`, and
+        # SPARQL/Turtle never expands a prefix inside an IRIREF, so a
         # prefixed-name value here would silently produce a literal IRI
         # like <causality:causes> that can never match the KB's real
         # <http://causality.org/causes> triples.
@@ -319,7 +319,7 @@ class SemanticParser:
             causal_assertions: Pre-identified causal assertions from LLM
 
         Returns:
-            ParsedResult with triplets and SPARQL query
+            ParsedResult with the extracted triplets
         """
         # Always parse the main answer text: it's typically the short,
         # declarative sentence the LLM was asked to produce, and is often
@@ -341,12 +341,7 @@ class SemanticParser:
                 # Update the assertion's triplets
                 assertion.triplets = assertion_triplets
 
-        # Generate SPARQL query
-        sparql_query = self._generate_sparql(triplets)
-
-        return ParsedResult(
-            triplets=triplets, sparql_query=sparql_query, source_text=text
-        )
+        return ParsedResult(triplets=triplets, source_text=text)
 
     def _extract_entity_text(self, token, doc) -> str:
         """
@@ -433,15 +428,19 @@ class SemanticParser:
 
                     if object_:
                         # Link entities to URIs
-                        subject_uri = await self._get_entity_uri(subject)
+                        subject_uri, subject_linked = await self._get_entity_uri(
+                            subject
+                        )
                         predicate_uri = self._get_predicate_uri(predicate)
-                        object_uri = await self._get_entity_uri(object_)
+                        object_uri, object_linked = await self._get_entity_uri(object_)
 
                         triplets.append(
                             Triplet(
                                 subject=subject_uri,
                                 predicate=predicate_uri,
                                 object=object_uri,
+                                subject_linked=subject_linked,
+                                object_linked=object_linked,
                             )
                         )
 
@@ -452,10 +451,17 @@ class SemanticParser:
         # Use the same parsing logic as _parse_text
         return await self._parse_text(assertion)
 
-    async def _get_entity_uri(self, entity_text: str) -> str:
+    async def _get_entity_uri(self, entity_text: str) -> tuple[str, bool]:
         """
         Get the URI for an entity using entity linking.
-        Falls back to a local URI if no match found.
+        Falls back to a fabricated local URI if no confident match is
+        found - the second element of the return tuple tells the caller
+        which happened, so a fabricated URI doesn't get compared
+        downstream (TruthAnchor) as if it were a real, resolved KB entity.
+
+        Returns:
+            (uri, linked) - `linked` is True only if `uri` is a real KB
+            entity from entity_linker; False if it's a fabricated fallback.
         """
         # entity_linker.link_entity() makes a blocking SPARQL HTTP call
         # under the hood despite this method's async signature - run it
@@ -466,13 +472,13 @@ class SemanticParser:
         )
 
         if linked and linked[0]["score"] > 0.7:
-            return linked[0]["uri"]
+            return linked[0]["uri"], True
         else:
             # Create a local URI. Must be a full absolute IRI (not the
             # prefixed name "local:foo") since callers wrap this in
             # `<...>` - see the predicate_templates comment above for why.
             normalized = re.sub(r"[^a-zA-Z0-9]", "_", entity_text.lower())
-            return f"http://local.caf/{normalized}"
+            return f"http://local.caf/{normalized}", False
 
     def _get_predicate_uri(self, predicate_text: str) -> str:
         """
@@ -490,42 +496,6 @@ class SemanticParser:
         normalized = re.sub(r"[^a-zA-Z0-9]", "_", predicate_lower)
         return f"http://local.caf/relation/{normalized}"
 
-    def _generate_sparql(self, triplets: list[Triplet]) -> str:
-        """
-        Generate SPARQL SELECT query from triplets.
-
-        Example:
-        SELECT ?o WHERE { :subject :predicate ?o }
-        """
-        if not triplets:
-            return ""
-
-        # Build WHERE clause
-        where_patterns = []
-        for t in triplets:
-            # Use variable if it's a query, else use literal
-            obj_var = (
-                "?o" if t.object_.startswith("http://local.caf/") else f"<{t.object_}>"
-            )
-            where_patterns.append(f"<{t.subject}> <{t.predicate}> {obj_var} .")
-
-        where_clause = "\n    ".join(where_patterns)
-
-        sparql = f"""
-PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-PREFIX schema: <https://schema.org/>
-PREFIX causality: <http://causality.org/>
-PREFIX local: <http://local.caf/>
-PREFIX relation: <http://local.caf/relation/>
-
-SELECT ?o
-WHERE {{
-    {where_clause}
-}}
-        """.strip()
-
-        return sparql
-
     def is_healthy(self) -> bool:
         """Check if parser is operational"""
         try:
@@ -538,7 +508,6 @@ WHERE {{
 class ParsedResult:
     """Result from semantic parsing"""
 
-    def __init__(self, triplets: list[Triplet], sparql_query: str, source_text: str):
+    def __init__(self, triplets: list[Triplet], source_text: str):
         self.triplets = triplets
-        self.sparql_query = sparql_query
         self.source_text = source_text

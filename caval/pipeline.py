@@ -79,15 +79,26 @@ class CAFPipeline:
 
             refinement_count += 1
             if refinement_count < max_refinement_iterations:
+                # Combined for feedback purposes: the LLM needs "what to
+                # fix" regardless of whether a triplet was checked and
+                # contradicted, or never resolved to a real KB entity in
+                # the first place - VerificationResult keeps the two lists
+                # separate for callers who want the distinction, but a
+                # retry prompt with only contradictions and an empty
+                # unverifiable list would go out with a useless blank
+                # constraint if every triplet fell in the latter bucket.
+                feedback = (
+                    verification_result.contradictions
+                    + verification_result.unverifiable
+                )
                 logger.warning(
                     f"Verification failed. Re-running with constraints. "
-                    f"Contradictions: {verification_result.contradictions}"
+                    f"Feedback: {feedback}"
                 )
 
                 constrained_prompt = (
                     f"{prompt}\n\n"
-                    f"CONSTRAINT: Avoid these contradictions: "
-                    f"{', '.join(verification_result.contradictions)}"
+                    f"CONSTRAINT: Avoid these contradictions: {', '.join(feedback)}"
                 )
 
                 inference_req.prompt = constrained_prompt
@@ -99,7 +110,10 @@ class CAFPipeline:
         if not is_verified:
             logger.error(f"Failed to verify after {refinement_count} iterations")
             raise VerificationFailedError(
-                contradictions=verification_result.contradictions,
+                contradictions=(
+                    verification_result.contradictions
+                    + verification_result.unverifiable
+                ),
                 refinement_iterations=refinement_count,
             )
 

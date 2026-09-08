@@ -145,7 +145,7 @@ requests behind whatever Fuseki round-trip is currently in flight; the
 **Fix:** wrap the blocking calls in `asyncio.to_thread(...)`, or switch to
 an async SPARQL client.
 
-### 5. Object-matching in `TruthAnchor` compares incompatible strings - PARTIALLY FIXED
+### 5. Object-matching in `TruthAnchor` compares incompatible strings - FIXED
 When `SemanticParser._get_entity_uri()` can't confidently link an entity
 (score \<= 0.7), it fabricates a local URI like `http://local.caf/slippery_road`
 ([modules/semantic_parser/parser.py:376-390](modules/semantic_parser/parser.py#L376-L390)). That fabricated URI then
@@ -168,31 +168,54 @@ comparing local names only (`TruthAnchor._local_name()`), not full URIs.
 Confirmed the same pair now scores 0.70, correctly below threshold, and a
 7-case regression suite still passes.
 
-**Still open (the conservative half - false negatives):** the underlying
-"object failed entity linking" case still isn't its own verification
-outcome - a fabricated URI still gets compared as if it were resolved, just
-now only on local name instead of full URI, so it can still read as a
-contradiction rather than "unverifiable" when entity linking genuinely
-fails to find a match. `experiments/knowledge_base_fvl.py`'s FVL (used by
-the `experiments/` path) does not have this problem - worth comparing the
-two approaches directly (see #7).
+**FIXED (the conservative half - false negatives):** "object/subject failed
+entity linking" is now its own verification outcome instead of silently
+comparing a fabricated URI as if it were resolved. `Triplet` gained
+`subject_linked`/`object_linked` bool fields (`api/models.py`), set by
+`SemanticParser._get_entity_uri()` (`modules/semantic_parser/parser.py`,
+now returns `(uri, linked)`); `TruthAnchor.verify()` checks both flags
+before ever querying Fuseki and routes unresolved triplets into a new
+`VerificationResult.unverifiable: list[str]` field instead of
+`contradictions` - skips a SPARQL round trip that couldn't possibly resolve
+anyway. `unverifiable` doesn't count for or against `is_valid` (neither
+false-positive nor false-negative pressure). `caval/pipeline.py`'s retry-
+constraint prompt and final `VerificationFailedError` message combine
+`contradictions + unverifiable` so the LLM/caller still gets useful "what
+to fix" feedback even when every triplet fell in the unverifiable bucket
+(confirmed this mattered - a KB-agreeing case can produce zero
+contradictions and would otherwise retry with a blank constraint).
+Verified: a triplet with nonsense entities ("Xyzzyplugh causes quantum
+flibbergibbet") now reports `contradictions: []`,
+`unverifiable: ["...could not be confidently linked..."]`, `is_valid:
+False` - not a false contradiction. Real KB regression suite still 7/7.
 
-### 6. `SemanticParser._generate_sparql` output is dead code
-`SemanticParser.parse()` builds `sparql_query` via `_generate_sparql()`
-([modules/semantic_parser/parser.py:311](modules/semantic_parser/parser.py#L311)) and returns it on `ParsedResult`, but
-`api/main.py` never reads `parsed_result.sparql_query` - it only ever uses
-`parsed_result.triplets`, and `TruthAnchor` builds its own per-triplet query
+`experiments/knowledge_base_fvl.py`'s FVL (used by the `experiments/` path)
+does not have this problem - not touched, per this session's established
+scope (`experiments/`+`common/` stay independent of the `api/`+`modules/`
+path `caval` wraps - see #7/#8).
+
+### 6. `SemanticParser._generate_sparql` output is dead code - FIXED
+Deleted `_generate_sparql()` and `ParsedResult.sparql_query` entirely
+(no other consumer anywhere in the codebase - confirmed via repo-wide
+grep) rather than wiring it in; `TruthAnchor` already builds and uses its
+own per-triplet query independently, so there was nothing for the
+combined-triplets version to actually do. `SemanticParser.parse()`/
+`ParsedResult.__init__` no longer take/return a SPARQL query, just
+`triplets` and `source_text`. Closes #11 too (the unused `causality:`
+prefix lived inside the deleted method).
+
+`SemanticParser.parse()` used to build `sparql_query` via `_generate_sparql()`
+([modules/semantic_parser/parser.py:311](modules/semantic_parser/parser.py#L311)) and return it on `ParsedResult`, but
+`api/main.py` never read `parsed_result.sparql_query` - it only ever used
+`parsed_result.triplets`, and `TruthAnchor` built its own per-triplet query
 independently in `_build_sparql_query()`. The combined-triplets query
-generator is unused in the actual pipeline.
-
-**Fix:** either delete `_generate_sparql`/remove `sparql_query` from
-`ParsedResult`, or actually use it and delete `TruthAnchor._build_sparql_query`.
+generator was unused in the actual pipeline.
 
 ---
 
 ## P2 - architecture / duplication
 
-### 7. Two independent, divergent LLM-loading implementations
+### 7. Two independent, divergent LLM-loading implementations - FIXED (delegation), otherwise deliberate
 - `common/llm_integration.py`: `HuggingFaceCausalLMLayer` + `OllamaLayer`,
   supports 4-bit/8-bit quantization, has explicit Llama-2/Llama-3/Qwen chat
   templates ([common/llm_integration.py:202-264](common/llm_integration.py#L202-L264)), strips `<think>` blocks for
@@ -204,22 +227,40 @@ generator is unused in the actual pipeline.
   `ANSWER:`/`CAUSAL_ASSERTIONS:` text block it then regex-parses back apart,
   vs. `common/llm_integration.py`'s plain string return).
 
-These two exist because `api/`+`modules/` is a service-shaped rewrite of
-what `experiments/caf_algorithm.py` + `common/llm_integration.py` already
-do, and the rewrite never converged with the original. Same root cause as
-#1. Recommend collapsing to one implementation (`common/llm_integration.py`,
-since it's the one that actually supports your real workload) that both
-`experiments/` scripts and the `modules/inference_engine` service use.
+**Resolved by #1's fix**: `InferenceEngine`'s HF fallback path now delegates
+to `common/llm_integration.py`'s `HuggingFaceCausalLMLayer` instead of
+reimplementing model loading - quantization, chat templating, and
+`<think>`-stripping no longer diverge between the two. The vLLM path in
+`engine.py` stays separate, but that's not duplication to collapse - vLLM
+and `transformers` are fundamentally different execution engines, so two
+call sites are the correct shape, not drift. `common/`'s own dependency on
+`experiments/` (via `InferenceLayer`) was separately cut - see the
+"decouple common/ from experiments/" commit.
 
-### 8. Two independent, divergent KB-verification implementations
+Given `experiments/`+`common/` are an intentionally independent path from
+`api/`+`modules/` (the one `caval` wraps) per this session's own scoping
+decisions, not touching `experiments/caf_algorithm.py`'s use of
+`common/llm_integration.py` further - that's the existing, working,
+intended relationship, not a bug.
+
+### 8. Two independent, divergent KB-verification implementations - deliberate, not fixing
 `modules/semantic_parser/parser.py`'s `EntityLinker` +
 `modules/truth_anchor/verifier.py`'s `TruthAnchor` (used by the API path)
 duplicate what `experiments/knowledge_base_fvl.py`'s `KnowledgeBaseFVL` (used
 by the experiments path) already does - entity linking against Fuseki labels,
 fuzzy matching, SPARQL verification - as a second, separately-maintained
-implementation with different bugs (see #5, which `knowledge_base_fvl.py`
-doesn't appear to share). Worth deciding which one is canonical and having
-the other delegate to it, same shape as #7.
+implementation, previously with different bugs (see #5, now fixed on the
+`api/`+`modules/` side; `knowledge_base_fvl.py` never had that specific bug).
+
+**Not collapsing these.** This session repeatedly re-confirmed
+`experiments/`+`common/` as a deliberately independent, untouched path
+(the original `CAFLoop`/benchmark harness), separate from `api/`+`modules/`
+(the service-shaped implementation `caval` wraps) - forcing one to delegate
+to the other would mean either coupling the benchmark harness's behavior to
+`caval`'s (risking silently changing published/reproducible experiment
+results) or vice versa. Two implementations of the same idea is real
+maintenance cost, but it's the accepted cost of keeping the benchmark path
+stable and independent, not an oversight.
 
 ### 9. `docker-compose.yml` / comments reference a `framework1`/`framework2` split that doesn't exist in this repo - FIXED
 Scrubbed the stale comment and corrected the usage example to the actual
@@ -236,15 +277,17 @@ that aren't there.
 
 ## P3 - minor
 
-### 10. `CausalValidator._is_causal_predicate` keyword list is mostly dead
-Checks for `'causedBy'`, `'resultIn'`, `'leadTo'`, `'produce'`, `'trigger'`,
-`'influence'` ([modules/causal_validator/validator.py:138-149](modules/causal_validator/validator.py#L138-L149)), but
-`SemanticParser.predicate_templates` ([modules/semantic_parser/parser.py:262-271](modules/semantic_parser/parser.py#L262-L271))
-only ever maps `'causes'` to a URI containing a matching keyword; anything
-else falls through to a generic `http://local.caf/relation/<verb>` URI built
-from spaCy's raw verb token, which is unlikely to literally contain strings
-like `resultin` or `leadto`. Most of this keyword list can currently never
-match what the parser actually produces.
+### 10. `CausalValidator._is_causal_predicate` keyword list is mostly dead - FIXED
+Trimmed to `["causes", "produce", "trigger", "influence"]`. Correction to
+the original finding: `'produce'`/`'trigger'`/`'influence'` weren't actually
+dead - they're reachable via `SemanticParser._get_predicate_uri`'s fallback
+`http://local.caf/relation/<verb-lemma>` URI when the lemma is exactly one
+of those words (verified by reading `_get_predicate_uri`). Only
+`'causedBy'`/`'resultIn'`/`'leadTo'` were truly unreachable: no single verb
+lemma the fallback builds a URI from produces those camelCase compound
+forms, and `'cause'`/`'lead'`/`'result'` are all intercepted by
+`predicate_templates` before ever reaching the fallback - so those three
+could never match anything. Dropped only those three, kept the rest.
 
 ### 12. Concrete example of the "naive extractor" gotcha already in README - FIXED
 Found while smoke-testing #4's fix against real KB data (a small
@@ -327,8 +370,6 @@ scores 0.696, correctly below threshold. Confirmed via a 7-case regression
 suite (5 true claims still verify, 2 false claims still correctly reject)
 that this didn't introduce new false negatives.
 
-### 11. Unused `causality:` SPARQL prefix
-`SemanticParser._generate_sparql` declares `PREFIX causality: <http://causality.org/>`
-([modules/semantic_parser/parser.py:432](modules/semantic_parser/parser.py#L432)) but never uses it in the generated
-query body (moot anyway per #6, but worth cleaning up if #6 goes the "keep
-and fix" direction instead of "delete").
+### 11. Unused `causality:` SPARQL prefix - FIXED
+Resolved by #6: `_generate_sparql` (which declared this unused prefix) was
+deleted entirely, not kept-and-fixed, so there's nothing left to clean up.

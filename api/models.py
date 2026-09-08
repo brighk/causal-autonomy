@@ -14,6 +14,18 @@ class Triplet(BaseModel):
     subject: str = Field(..., description="Subject URI or literal")
     predicate: str = Field(..., description="Predicate URI")
     object_: str = Field(..., alias="object", description="Object URI or literal")
+    subject_linked: bool = Field(
+        default=True,
+        description="False if `subject` is a fabricated fallback URI "
+        "(SemanticParser couldn't confidently link the entity to a real KB "
+        "node) rather than one entity_linker actually resolved. Lets "
+        "TruthAnchor tell 'couldn't confirm' apart from 'checked and "
+        "contradicted'.",
+    )
+    object_linked: bool = Field(
+        default=True,
+        description="Same as subject_linked, for `object_`.",
+    )
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -53,6 +65,14 @@ class VerificationResult(BaseModel):
     is_valid: bool = Field(..., description="Whether assertion is grounded in KB")
     matched_triplets: list[Triplet] = Field(default_factory=list)
     contradictions: list[str] = Field(default_factory=list)
+    unverifiable: list[str] = Field(
+        default_factory=list,
+        description="Triplets whose subject and/or object couldn't be "
+        "confidently linked to a KB entity, so no meaningful comparison "
+        "could be made - distinct from contradictions (checked against "
+        "the KB and found unsupported) since these were never actually "
+        "checked. Doesn't count for or against is_valid.",
+    )
     similarity_score: float | None = Field(None, ge=0.0, le=1.0)
     verification_method: str = Field(default="exact_match")
 

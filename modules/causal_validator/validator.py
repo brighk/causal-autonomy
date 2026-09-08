@@ -132,15 +132,17 @@ class CausalValidator:
 
     def _is_causal_predicate(self, predicate: str) -> bool:
         """Check if a predicate represents a causal relationship"""
-        causal_keywords = [
-            "causes",
-            "causedBy",
-            "resultIn",
-            "leadTo",
-            "produce",
-            "trigger",
-            "influence",
-        ]
+        # Reachable from what SemanticParser.predicate_templates actually
+        # produces: 'causes' is the mapped URI for the cause/lead/result
+        # lemmas (http://causality.org/causes); 'produce'/'trigger'/
+        # 'influence' are only reachable via the fallback
+        # http://local.caf/relation/<verb-lemma> URI, when the lemma is
+        # literally one of those words. Dropped 'causedBy'/'resultIn'/
+        # 'leadTo': no single verb lemma the fallback builds a URI from
+        # produces those camelCase compound forms, and 'cause'/'lead'/
+        # 'result' are all intercepted by predicate_templates before ever
+        # reaching the fallback - so those three could never match.
+        causal_keywords = ["causes", "produce", "trigger", "influence"]
 
         predicate_lower = predicate.lower()
         return any(keyword.lower() in predicate_lower for keyword in causal_keywords)
