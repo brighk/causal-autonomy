@@ -86,6 +86,17 @@ class FinalResponse(BaseModel):
     causal_grounding: list[Triplet] = Field(default_factory=list)
     confidence: float = Field(ge=0.0, le=1.0)
     session_id: str | None = None
+    causal_level: int = Field(
+        default=1,
+        ge=1,
+        le=3,
+        description=(
+            "Pearl's causal hierarchy level used to produce this response. "
+            "1 = observational (SPARQL fact lookup + LLM refinement loop), "
+            "2 = interventional (do-calculus graph surgery, no LLM), "
+            "3 = counterfactual (retrospective do-calculus, no LLM)."
+        ),
+    )
 
 
 class CAFRequest(BaseModel):

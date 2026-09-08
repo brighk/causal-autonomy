@@ -6,6 +6,7 @@ from api.models import FinalResponse
 from modules.causal_validator.validator import CausalValidator
 from modules.inference_engine.client import InferenceEngineClient
 from modules.semantic_parser.parser import SemanticParser
+from modules.truth_anchor.causal_graph_builder import CausalGraphBuilder
 from modules.truth_anchor.verifier import TruthAnchor
 from utils.config import Settings, get_settings
 
@@ -81,6 +82,9 @@ class Caval:
         )
         self._truth_anchor = TruthAnchor(fuseki_endpoint=fuseki_endpoint)
         self._causal_validator = CausalValidator()
+        # Level 2/3 routing: walk KB causal edges and answer via do-calculus
+        # without LLM involvement.
+        self._causal_graph_builder = CausalGraphBuilder(fuseki_endpoint=fuseki_endpoint)
 
     async def aask(
         self,
@@ -110,6 +114,7 @@ class Caval:
                 parser=self._parser,
                 truth_anchor=self._truth_anchor,
                 causal_validator=self._causal_validator,
+                causal_graph_builder=self._causal_graph_builder,
             )
             return await pipeline.run(
                 prompt,

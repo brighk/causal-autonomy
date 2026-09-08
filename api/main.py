@@ -17,6 +17,7 @@ from caval.pipeline import CAFPipeline
 from modules.causal_validator.validator import CausalValidator
 from modules.inference_engine.client import InferenceEngineClient
 from modules.semantic_parser.parser import SemanticParser
+from modules.truth_anchor.causal_graph_builder import CausalGraphBuilder
 from modules.truth_anchor.verifier import TruthAnchor
 from utils.config import get_settings
 
@@ -63,6 +64,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠ Causal validator initialization failed: {e}")
         services["causal_validator"] = None
+
+    try:
+        services["causal_graph_builder"] = CausalGraphBuilder(
+            fuseki_endpoint=settings.fuseki_endpoint
+        )
+        logger.info("✓ Causal graph builder initialized (Level 2/3 do-calculus)")
+    except Exception as e:
+        logger.warning(f"⚠ Causal graph builder initialization failed: {e}")
+        services["causal_graph_builder"] = None
 
     logger.info("Service initialization complete")
     yield
@@ -138,6 +148,7 @@ async def causal_inference(request: CAFRequest):
         parser=services["parser"],
         truth_anchor=services["truth_anchor"],
         causal_validator=services["causal_validator"],
+        causal_graph_builder=services.get("causal_graph_builder"),
     )
 
     try:

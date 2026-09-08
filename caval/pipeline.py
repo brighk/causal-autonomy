@@ -3,11 +3,20 @@ The CAF generate -> parse -> verify -> constrain -> regenerate loop,
 extracted from api/main.py's POST /v1/infer handler so both the FastAPI
 gateway and caval's own Caval class run the exact same logic instead of two
 copies that can silently drift apart.
+
+Pearl's causal hierarchy routing:
+  Level 1 (observational): factual SPARQL lookup + LLM refinement loop.
+  Level 2/3 (interventional/counterfactual): do-calculus via CausalGraphBuilder,
+      NO LLM involved — the KB is the sole source of truth.
 """
 
 from loguru import logger
 
-from api.models import FinalResponse, InferenceRequest
+from api.models import FinalResponse, InferenceRequest, VerificationResult
+from experiments.intervention_calculus import (
+    counterfactual_reasoning_with_graph,
+    parse_counterfactual_query,
+)
 
 from .exceptions import VerificationFailedError
 
@@ -21,13 +30,27 @@ class CAFPipeline:
     itself - callers (api/main.py's lifespan-managed singletons, or
     caval.Caval's per-instance/per-call services) own construction and
     lifecycle.
+
+    If causal_graph_builder is provided, interventional and counterfactual
+    queries (Pearl Level 2/3) are answered by do-calculus against the live
+    KB without invoking the LLM at all.  Factual queries (Level 1) use the
+    existing generate -> verify -> constrain -> regenerate loop.
     """
 
-    def __init__(self, *, inference, parser, truth_anchor, causal_validator):
+    def __init__(
+        self,
+        *,
+        inference,
+        parser,
+        truth_anchor,
+        causal_validator,
+        causal_graph_builder=None,
+    ):
         self.inference = inference
         self.parser = parser
         self.truth_anchor = truth_anchor
         self.causal_validator = causal_validator
+        self.causal_graph_builder = causal_graph_builder
 
     async def run(
         self,
@@ -41,10 +64,56 @@ class CAFPipeline:
         """
         Run the full loop for one prompt.
 
+        For Level 2/3 queries (counterfactual patterns detected by
+        parse_counterfactual_query), bypasses the LLM entirely and answers
+        via do-calculus against the live KB.  Falls through to the Level 1
+        LLM+SPARQL path if the KB has no relevant causal edges or the query
+        can't be parsed.
+
         Raises:
-            VerificationFailedError: if the response can't be grounded in
-                the knowledge base within max_refinement_iterations.
+            VerificationFailedError: if the Level 1 path can't ground the
+                response within max_refinement_iterations.
         """
+        # --- Level 2 / Level 3 routing (no LLM) ---
+        if self.causal_graph_builder is not None:
+            parsed_cf = parse_counterfactual_query(prompt)
+            if parsed_cf is not None:
+                graph = await self.causal_graph_builder.build(
+                    [parsed_cf["target"], parsed_cf["intervention_node"]]
+                )
+                if graph.edges:
+                    outcome = counterfactual_reasoning_with_graph(prompt, graph)
+                    if outcome is not None:
+                        do_expr = (
+                            f"do({parsed_cf['intervention_node']}"
+                            f"={parsed_cf['intervention_value']})"
+                        )
+                        answer = (
+                            f"{'Yes' if outcome else 'No'}. "
+                            f"Under intervention {do_expr}, "
+                            f"{parsed_cf['target']} would "
+                            f"{'occur' if outcome else 'not occur'}."
+                        )
+                        return FinalResponse(
+                            text=answer,
+                            verification_status=VerificationResult(
+                                is_valid=True,
+                                matched_triplets=[],
+                                contradictions=[],
+                                verification_method="do_calculus",
+                            ),
+                            refinement_iterations=0,
+                            causal_grounding=[],
+                            confidence=1.0,
+                            session_id=session_id,
+                            causal_level=2,
+                        )
+                logger.warning(
+                    "Level 2/3 routing: no KB causal edges found or "
+                    "unparseable query — falling through to Level 1"
+                )
+
+        # --- Level 1: generate -> parse -> verify -> constrain -> regenerate ---
         inference_req = InferenceRequest(prompt=prompt, session_id=session_id)
         response_candidate = await self.inference.generate(inference_req)
 

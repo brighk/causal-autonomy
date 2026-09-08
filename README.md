@@ -1,103 +1,197 @@
-# Causal Reasoning Verification (CAVAL CAusal VALidation/Verification) (part from Causal Autonomy Framework)
+# CAVAL — Causal Autonomy Verification And vaLidation
 
 [![CI](https://github.com/brighk/causal_autonomy/actions/workflows/ci.yml/badge.svg)](https://github.com/brighk/causal_autonomy/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/caval.svg)](https://pypi.org/project/caval/)
 
-CAF (Causal Autonomy Framework) verifies an LLM's output against a knowledge base at request time, using an iterative generate → verify → constrain → regenerate loop. Each draft response is parsed into RDF triplets, then each triplet is checked against a SPARQL knowledge base, and if verification fails the failures are turned into constraints that are fed back into the next generation attempt.
+A causal fact-checker for LLMs. CAVAL prevents language models from hallucinating causal claims by grounding every causal assertion against a formal knowledge base — and answers interventional and counterfactual questions using do-calculus on that knowledge base instead of the model's statistical priors.
+
+---
+
+## The problem
+
+Large language models are trained on observational text. They learn statistical associations — what words follow what words — not causal structure. When you ask an LLM "Does X cause Y?" it pattern-matches against its training distribution. When you ask "What would happen if we forced X?", or "Would Y have occurred if X had been prevented?", it does the same thing, dressed in causal-sounding language. It has no mechanism to distinguish those three questions, and it regularly gets them wrong.
+
+This is not a prompting problem. It is a structural one. Judea Pearl's causal hierarchy formalises it precisely:
+
+| Level | Question type | Example | What it requires |
+|-------|--------------|---------|-----------------|
+| **1 — Observational** | Does X correlate with Y? | Do CPU spikes co-occur with timeouts? | Pattern matching over data |
+| **2 — Interventional** | What if we do(X)? | If we enforce auth at node A, what is the breach rate? | A causal model + do-calculus |
+| **3 — Counterfactual** | Would Y have occurred if X had been different? | Would this breach have happened without the rogue base station? | A structural causal model + abduction |
+
+An LLM operates natively at Level 1. It can approximate Levels 2 and 3 in easy cases, but it has no guarantee of correctness and no mechanism for abstention when it doesn't know.
+
+CAVAL addresses this by keeping the LLM where it belongs — generating and reformulating text — and handing Levels 2 and 3 to formal causal machinery.
+
+---
+
+## How it works
+
+CAVAL routes every query to the appropriate reasoning mechanism based on its type:
+
+```
+Query
+  │
+  ├─ Level 2/3 pattern detected? ──Yes──► Build causal graph from KB (SPARQL BFS)
+  │                                        Apply do-calculus (Pearl's graph surgery)
+  │                                        Return formal answer — LLM not called
+  │
+  └─ No (factual/observational) ──────► LLM drafts a response
+                                         Parse response → RDF triplets
+                                         SPARQL-verify each triplet against KB
+                                         ┌─ All verified? ──► Return response
+                                         └─ Contradictions? ──► Inject constraints
+                                                                 LLM retries
+                                                                 (up to N times)
+```
+
+**Level 1 (factual):** the LLM generates a candidate answer. The semantic parser extracts causal assertions as RDF triplets. The truth anchor queries the knowledge base via SPARQL. If a triplet contradicts the KB, the contradiction is fed back as a constraint and the LLM regenerates. This loop continues until the response is fully grounded or the iteration limit is reached.
+
+**Level 2/3 (interventional and counterfactual):** the LLM is bypassed entirely. CAVAL links the query's entities to KB nodes, walks causal-predicate edges outward via SPARQL traversal to build a local causal graph, applies Pearl's do-calculus (graph surgery: remove incoming edges to the intervened node, propagate through descendants), and returns the formal result. The answer comes from the KB structure, not from the model's priors.
+
+The response always carries a `causal_level` field (1, 2, or 3) so callers know which mechanism answered it.
+
+---
+
+## Quick start
+
+```bash
+pip install caval
+python -m spacy download en_core_web_sm   # one-time — see Setup
+```
+
+Two background services are required: Fuseki (the knowledge base) and the inference engine (the LLM server). See [Setup](#setup) for details.
+
+```bash
+# 1. Start Fuseki
+FUSEKI_ADMIN_PASSWORD=secret docker compose -f deployment/docker-compose.yml up -d
+
+# 2. Start the inference engine (separate terminal)
+uv run python -m modules.inference_engine.server
+```
+
+```python
+from caval import Caval
+
+caf = Caval()
+
+# Level 1 — factual query: LLM answers, SPARQL verifies
+result = caf.ask("Does high CPU usage cause increased response time?")
+print(result.text)                               # verified answer
+print(result.verification_status.is_valid)       # True
+print(result.causal_level)                       # 1
+
+# Level 2 — interventional query: do-calculus answers, LLM not called
+result = caf.ask("Would response time increase if we prevent CPU spikes?")
+print(result.text)                               # "No. Under do(cpu_spikes=False)..."
+print(result.verification_status.verification_method)  # "do_calculus"
+print(result.causal_level)                       # 2
+```
+
+Async variant for embedding in an existing async app:
+
+```python
+result = await caf.aask("Does rain cause road slipperiness?")
+```
+
+---
+
+## What it is for
+
+CAVAL is useful in any domain where you need causal reasoning you can trust and trace — where "the model said so" is not an acceptable justification.
+
+**6G network security.** A security analyst queries an incident knowledge graph:
+- *Level 1:* "Do signal anomalies co-occur with auth failures at node 7?" — SPARQL fact check.
+- *Level 2:* "If we enforce beamforming authentication at node 7, what is the downstream breach probability?" — do-calculus on the causal security model.
+- *Level 3:* "Would this breach have occurred had quantum-safe encryption been deployed at the time?" — counterfactual forensics against the stored structural model.
+
+**Medical and clinical reasoning.** Feed clinical literature through the companion [causal-discovery](../causal-discovery) extractor to build a causal knowledge graph, then query it. Every accepted answer traces back to the source edge that supports it.
+
+**Policy and economic analysis.** Same architecture. The KB holds causal relationships extracted from policy documents; CAVAL answers intervention questions ("what is the effect of policy X on outcome Y?") without conflating correlation with causation.
+
+**Verified LLM pipelines.** Any application that uses an LLM to reason about a domain where you have structured causal knowledge. CAVAL sits between the LLM and the user, ensuring the model's causal claims are grounded before they are accepted.
+
+---
 
 ## Architecture
 
-- `api/` - FastAPI gateway (`api/main.py`, `POST /v1/infer`), orchestrates the full pipeline over HTTP.
-- `modules/` - the four pipeline stages: `inference_engine/` (drafts a response + causal assertions), `semantic_parser/` (assertions → RDF triples, entity-linked directly against Fuseki's `rdfs:label`/`skos:prefLabel` triples - exact match, then fuzzy), `truth_anchor/` (SPARQL verification against Apache Jena Fuseki), `causal_validator/` (cycle/consistency checks on the resulting causal graph).
-- `experiments/` - the standalone `CAFLoop` algorithm (`caf_algorithm.py`), a SPARQL-backed verification layer (`knowledge_base_fvl.py`'s `KnowledgeBaseFVL`, using spaCy for triplet parsing), CounterBench evaluation harnesses, and baselines (CoT, RAG).
-- `common/llm_integration.py` - backend-agnostic LLM wrapper shared by every entry point (local HuggingFace models or a running Ollama server).
+```
+caval/          Public library: Caval class, CAFPipeline
+api/            FastAPI gateway (POST /v1/infer) — same pipeline over HTTP
+modules/
+  inference_engine/   LLM client (HTTP) and server (vLLM / HuggingFace 4-bit)
+  semantic_parser/    LLM text → RDF triplets via spaCy + Fuseki entity linking
+  truth_anchor/       SPARQL verification against Apache Jena Fuseki
+                      causal_graph_builder.py — BFS KB traversal for Level 2/3
+  causal_validator/   Cycle and consistency checks on the verified causal graph
+experiments/
+  caf_algorithm.py              CAFLoop — the original script-level driver
+  intervention_calculus.py      CausalGraph, do-calculus, parse_counterfactual_query
+  kb_fvl_with_intervention.py   KnowledgeBaseFVLWithIntervention (experiments path)
+  knowledge_base_fvl.py         KnowledgeBaseFVL — base SPARQL verifier
+  run_counterbench_experiment.py CounterBench evaluation harness
+common/
+  llm_integration.py  Backend-agnostic LLM wrapper (Ollama, HuggingFace, 4-bit)
+```
 
-There are three ways to drive this: the `caval` library (`caval/`, a thin wrapper around `api/`+`modules/` - see [Install as a library](#install-as-a-library) below), the FastAPI service directly (`api/main.py`, needs a separate inference-engine server too - see `modules/inference_engine/`), or `CAFLoop` in a script, which only needs an `InferenceLayer` and a `FormalVerificationLayer` - see [Running a query](#running-a-query) below for that minimal path.
+**Three entry points:**
+
+1. **`caval` library** (`from caval import Caval`) — `pip install caval`, talks to Fuseki and to a running inference-engine server over HTTP. The primary interface.
+
+2. **FastAPI service** (`api/main.py`) — the same pipeline exposed as `POST /v1/infer`. Run with `uv run python -m api.main`.
+
+3. **`CAFLoop` directly** (`experiments/caf_algorithm.py`) — for scripting and benchmarks, no FastAPI layer. Use `KnowledgeBaseFVLWithIntervention` as the verifier to get Level 2/3 routing here too.
+
+---
 
 ## Setup
 
-`caval` itself is lightweight - parsing, entity linking, and SPARQL
-verification only, no web framework or ML stack (it talks to Fuseki and to
-an already-running inference engine over plain HTTP). The FastAPI gateway,
-local model loading, and the `experiments/` benchmark harness are optional
-extras so a `caval`-only consumer doesn't pull in a multi-GB ML stack they
-don't need:
+`caval` itself is lightweight — spaCy, SPARQLWrapper, httpx, pydantic — no GPU stack. The inference engine, FastAPI gateway, and experiments harness are optional extras:
 
 ```bash
-uv sync                          # caval only - lean, no torch/fastapi/etc.
-uv sync --extra api              # + the FastAPI gateway (api/main.py)
-uv sync --extra llm              # + local model loading (modules/inference_engine/server.py)
-uv sync --extra experiments      # + the experiments/ benchmark harness
-uv sync --all-extras             # everything - what you want for full local dev on this repo
+uv sync                          # caval only
+uv sync --extra api              # + FastAPI gateway
+uv sync --extra llm              # + local model loading
+uv sync --extra experiments      # + benchmark harness
+uv sync --all-extras             # everything
 ```
 
-`en_core_web_sm` (spaCy's model, needed for triplet parsing) isn't a real
-PyPI package, so it's not a published dependency of `caval` - a plain
-`pip install caval` can't resolve it. For local dev on *this* repo, `uv
-sync` still installs it automatically (it's in the `dev` dependency-group,
-mapped via `[tool.uv.sources]`). If you installed `caval` from PyPI
-instead, run this once:
+`en_core_web_sm` is not on PyPI. For local dev, `uv sync` installs it automatically. If you installed `caval` from PyPI:
 
 ```bash
 python -m spacy download en_core_web_sm
 ```
 
-`Caval()`/`SemanticParser()` raise a clear `RuntimeError` with this exact
-command if the model isn't found, rather than failing silently.
+`SemanticParser` raises a clear `RuntimeError` with this exact command if the model is missing.
 
-
-## Development checks
-
-Install the development tools and enable automatic checks before each commit:
+### Running Fuseki
 
 ```bash
-uv sync --locked
-uv run --no-sync prek install
+FUSEKI_ADMIN_PASSWORD=<password> docker compose -f deployment/docker-compose.yml up -d
 ```
 
-For a tooling-only checkout without the ML dependencies, use
-`uv sync --locked --only-dev --inexact` instead of `uv sync --locked`.
-Run `prek install` once per clone. The hooks use the Ruff version in `uv.lock`.
+Verify the dataset is configured (an unconfigured Fuseki silently serves an empty default dataset):
 
 ```bash
-uv run --no-sync prek run --all-files  # check and fix the entire repo
-uv run --no-sync ruff check .         # lint without changing files
-uv run --no-sync ruff format --check .
-```
-
-prek runs Ruff linting, import sorting, and formatting, plus checks for merge
-conflicts, YAML/TOML syntax, files larger than 1 MiB, trailing whitespace, and
-missing final newlines. Normal commits check staged files only. If hooks fix
-files, review and stage those changes before retrying the commit. Existing files
-may need cleanup the first time they are checked.
-
-## Running Fuseki
-
-```bash
-FUSEKI_ADMIN_PASSWORD=<pick-something> \
-  docker compose -f deployment/docker-compose.yml up -d
-```
-
-Verify it's actually up *and* the dataset is configured (an unconfigured Fuseki silently serves an empty default dataset instead of erroring):
-
-```bash
-curl http://localhost:3030/\$/ping
+curl http://localhost:3030/$/ping
 curl -G http://localhost:3030/dataset/query --data-urlencode "query=ASK { ?s ?p ?o }"
 ```
 
-The second command should return a JSON `ASK` result, not a 404 or an HTML error page. If it 404s, the dataset config didn't load - see the note in `deployment/docker-compose.yml` about the `secoresearch/fuseki` image's actual mount paths (`/fuseki-base/configuration/assembler.ttl`), which differ from that image's own docs and from older image versions.
+The second command should return a JSON `ASK` result. If it 404s, the dataset config did not load — see the note in `deployment/docker-compose.yml` about the `secoresearch/fuseki` image's mount paths.
 
-### Loading knowledge into it
+### Loading knowledge
 
-A single fact, direct SPARQL:
+A single fact:
 
 ```bash
 curl -X POST http://localhost:3030/dataset/update \
   -H "Content-Type: application/sparql-update" \
-  --data 'INSERT DATA { <http://local.caf/rain> <http://causality.org/causes> <http://local.caf/slippery_road> }'
+  --data 'INSERT DATA {
+    <http://local.caf/rain> <http://causality.org/causes> <http://local.caf/slippery_road>
+  }'
 ```
 
-Bulk load an N-Triples file:
+Bulk load from an N-Triples file:
 
 ```bash
 curl -X POST http://localhost:3030/dataset/data \
@@ -105,9 +199,9 @@ curl -X POST http://localhost:3030/dataset/data \
   --data-binary @my_facts.nt
 ```
 
-To build that file from real text instead of hand-writing it, use the companion [causal-discovery](../causal-discovery) repo's `populate_kb_from_text.py` - it extracts a causal graph from a chunk of text and can POST straight to this endpoint.
+To build that file from unstructured text, use the companion [causal-discovery](../causal-discovery) repo's `populate_kb_from_text.py`.
 
-### Clearing it
+Clearing the dataset:
 
 ```bash
 curl -X POST http://localhost:3030/dataset/update \
@@ -115,97 +209,45 @@ curl -X POST http://localhost:3030/dataset/update \
   --data 'DELETE WHERE { ?s ?p ?o }'
 ```
 
-## Install as a library
-
-`caval` is [published on PyPI](https://pypi.org/project/caval/) and wraps
-the `api/`+`modules/` pipeline as a plain importable class - no FastAPI
-service to run yourself, but the LLM still runs as its own background
-process (for GPU isolation) and Fuseki still runs via docker-compose.
-`pip install caval`/`uv add caval` pulls in only what `caval` itself needs
-(spaCy, SPARQLWrapper, httpx, pydantic) - no torch, no FastAPI, nothing
-GPU-related - since it talks to Fuseki and to the already-running inference
-engine below over plain HTTP, not in-process. Three things running, few
-lines of code:
+### Development checks
 
 ```bash
-pip install caval   # or: uv add caval
-python -m spacy download en_core_web_sm   # one-time - see the note in Setup above
+uv sync --locked
+uv run --no-sync prek install
+uv run --no-sync prek run --all-files   # lint + format the whole repo
 ```
 
-```bash
-# 1. Fuseki
-FUSEKI_ADMIN_PASSWORD=<pick-something> docker compose -f deployment/docker-compose.yml up -d
+---
 
-# 2. The LLM, in a separate terminal (needs the `llm` extra: uv sync --extra llm)
-uv run python -m modules.inference_engine.server
-```
-
-```python
-# 3. Your script
-from caval import Caval
-
-caf = Caval()  # zero-config: reads .env, same as the FastAPI gateway's Settings()
-result = caf.ask("Does high cpu usage cause increased response time?")
-print(result.text, result.verification_status.is_valid)
-```
-
-An async `caf.aask(...)` is also available for embedding in an already-async
-app (e.g. a FastAPI route) - `caf.ask(...)` can't be called from inside a
-running event loop. See `examples/quickstart.py` and
-`examples/quickstart_async.py` for runnable versions of both. `caval` is
-built on the `api/`+`modules/` implementation specifically, not the
-`experiments/`+`common/` script path described below.
-
-## Running a query
-
-The minimal path - no FastAPI service, just `CAFLoop` directly against a real LLM and a real KB:
-
-```python
-from experiments.caf_algorithm import CAFLoop, CAFConfig
-from experiments.kb_fvl_with_intervention import KnowledgeBaseFVLWithIntervention
-from common.llm_integration import HuggingFaceCausalLMLayer, LLMConfig
-
-llm = HuggingFaceCausalLMLayer(LLMConfig(model_name="Qwen/Qwen3-14B", load_in_4bit=True, trust_remote_code=True))
-verifier = KnowledgeBaseFVLWithIntervention(sparql_endpoint="http://localhost:3030/dataset/query")
-
-caf_loop = CAFLoop(
-    config=CAFConfig(max_iterations=3, verification_threshold=0.8),
-    inference_layer=llm,
-    verification_layer=verifier,
-)
-
-output = caf_loop.execute("Does water pooling cause mold growth?")
-print(output.final_response, output.decision, output.final_score)
-```
-
-`KnowledgeBaseFVLWithIntervention` (`experiments/kb_fvl_with_intervention.py`) is a strict superset of `KnowledgeBaseFVL`: for a factual question it verifies via SPARQL exactly like the plain class, but if the question looks counterfactual ("Would X occur if we prevented Y?") it instead builds a causal graph by walking causal-predicate edges outward from the mentioned entities in the same live KB, and answers via Pearl's do-calculus (`experiments/intervention_calculus.py`) - no extra setup required when driving it through `CAFLoop` this way. Plain `KnowledgeBaseFVL` is still there for callers that only ever ask factual questions.
-
-Or run the CounterBench benchmark harness (needs `uv sync --extra experiments --extra llm` - `experiments/` pulls in numpy/pandas/matplotlib, `--use-llm` pulls in torch/transformers via `common/llm_integration.py`):
+## Running the CounterBench benchmark
 
 ```bash
 uv run python -m experiments.run_counterbench_experiment \
-  --input <your-dataset>.json \
+  --input <dataset>.json \
   --use-llm --llm-model <name> \
   --use-real-sparql \
   --sparql-endpoint http://localhost:3030/dataset/query \
   --output results/caf_run
 ```
 
-Or as a live service (needs `uv sync --extra api`, and a separate inference-engine server running too):
+Requires `uv sync --extra experiments --extra llm`.
 
-```bash
-uv run python -m api.main
-```
+---
 
 ## Gotchas
 
-- **`TruthAnchor`/`KnowledgeBaseFVL` always returns "not found"**: check the dataset is actually configured (see the `ASK` query above), and check the entities you're querying have `rdfs:label` triples - `KnowledgeBaseFVL` links mention text to KB URIs by label, and a KB of bare `<uri> causes <uri>` triples with no labels will never resolve anything.
-- **`KnowledgeBaseFVL`'s triplet parser is naive**: it does dependency-parse SVO extraction over the LLM's raw answer text. It handles simple declarative sentences ("X causes Y") reliably, but complex phrasing (relative clauses, passive voice, rephrasing) can make it grab the wrong subject/object - this shows up as an unexpected REJECT even when the KB genuinely supports the claim. If you're building an eval prompt, ask for a short declarative answer.
-- **Entity linking is substring-tolerant, which trades false negatives for false positives**: `_link_entity`'s fuzzy match uses `max(ratio, partial_ratio)`, so a short clean phrase (e.g. "habitat destruction") can still link to a much longer KB label that contains it verbatim (e.g. "habitat destruction which in turn leads to biodiversity loss") - useful against KBs with non-atomic, multi-clause labels (common output of `causal-discovery`'s extractor on complex sentences). The flip side: a short or generic entity mention can now spuriously match any long label that happens to contain it as a substring, regardless of whether they're actually the same concept. Prefer specific multi-word claims over single generic words when querying a KB built from non-atomic labels.
-- **`modules/semantic_parser/parser.py`'s `EntityLinker` queries Fuseki directly, same as `KnowledgeBaseFVL`** - no separate vector index to seed or keep in sync (an earlier version used ChromaDB for this; it was never actually populated, so entity linking silently found nothing). The gotcha above about needing `rdfs:label`/`skos:prefLabel` triples applies here too.
-- **`modules/semantic_parser/parser.py` requires spaCy - there is no fallback**: `SemanticParser.__init__` calls `spacy.load(spacy_model)` (default `en_core_web_sm`) and raises `RuntimeError` immediately if spaCy or the model isn't installed, rather than silently parsing with something weaker - a degraded extractor would quietly undermine what `TruthAnchor` is verifying. Install the model per [Setup](#setup). In `api/main.py`, a failed init here surfaces as `services['parser']` being `None` and `/health` reporting `semantic_parser: false`.
-- **`KnowledgeBaseFVLWithIntervention` silently falls back to plain SPARQL** if it can't link the question's entities to the KB, or finds no causal-predicate edges within `causal_graph_max_hops` (default 2) hops of them - a real counterfactual question can come back as an ordinary factual FAILED/PARTIAL instead of a do-calculus VERIFIED/CONTRADICTION if the relevant chain is more than 2 hops away. Increase `causal_graph_max_hops` if your KB's causal chains are longer, at the cost of more SPARQL round-trips per verification.
+**Nothing verifies — everything lands in "unverifiable":** the failure is in entity linking, not the SPARQL check. `EntityLinker` links mention text to KB URIs via `rdfs:label` / `skos:prefLabel`. A KB of bare `<uri> causes <uri>` triples with no labels means every entity fails to link, `subject_linked=False` on every triplet, and `TruthAnchor` skips the SPARQL query entirely rather than querying a fabricated URI. Check the dataset is configured (see the `ASK` query above) and that your KB entities have label triples — without them, nothing can be verified.
+
+**Level 2/3 routing silently falls back to Level 1:** `CausalGraphBuilder` returns an empty graph if it can't link the query's entities to KB nodes, or finds no causal-predicate edges within `max_hops` (default 2) hops. The response will have `causal_level=1` and the LLM will be called. Increase `max_hops` if your causal chains are longer, at the cost of more SPARQL round-trips.
+
+**The semantic parser is fragile on complex phrasing:** `SemanticParser` does dependency-parse SVO extraction. It handles simple declarative sentences ("X causes Y") reliably. Complex phrasing (passive voice, relative clauses, subordinate clauses) can produce wrong triplets — the LLM will see an unexpected constraint. Ask for short declarative answers in your prompts.
+
+**Entity linking trades false negatives for false positives:** the fuzzy matcher uses `max(ratio, partial_ratio)`, so a short phrase ("habitat destruction") can match a longer KB label that contains it as a substring. Prefer specific multi-word phrases over single generic words, especially on KBs built from non-atomic labels.
+
+**`SemanticParser` has no fallback:** if spaCy or `en_core_web_sm` is missing, `Caval()` raises `RuntimeError` immediately rather than degrading silently — a degraded extractor would quietly undermine verification.
+
+---
 
 ## License
 
-MIT - see `LICENSE`.
+MIT — see `LICENSE`.
