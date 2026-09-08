@@ -175,13 +175,35 @@ LIMIT 10
             logger.error(f"SPARQL execution failed: {e}")
             raise
 
+    @staticmethod
+    def _local_name(value: str) -> str:
+        """
+        Extract the local name/label portion of a URI (the part after the
+        last '/' or '#'), for fuzzy comparison. expected_object here is
+        frequently a fabricated http://local.caf/<normalized-text> URI (see
+        SemanticParser._get_entity_uri's fallback) built in the same
+        namespace the KB itself uses - comparing full URI strings lets that
+        shared prefix (most of the string, for a short local name) inflate
+        the similarity score for two otherwise unrelated entities, e.g.
+        "http://local.caf/pod_restart" vs "http://local.caf/pod_rotation"
+        scores 0.88 on the full string despite naming different things -
+        enough to spuriously clear a 0.8 threshold and report a claim as
+        VERIFIED when the KB doesn't actually support it. Plain literals
+        (no '/' or '#') pass through unchanged.
+        """
+        if "#" in value:
+            return value.rsplit("#", 1)[-1]
+        if "/" in value:
+            return value.rsplit("/", 1)[-1]
+        return value
+
     def _verify_object_match(
         self, expected_object: str, results: list[dict[str, Any]], threshold: float
     ) -> dict[str, Any]:
         """
         Verify if the expected object matches any result using:
-        1. Exact match
-        2. Fuzzy match (Levenshtein distance)
+        1. Exact match (full value)
+        2. Fuzzy match (Levenshtein distance, local name only)
 
         Returns:
             Dict with 'matched' (bool), 'score' (float), 'expected' (str)
@@ -195,13 +217,17 @@ LIMIT 10
         for result in results:
             result_value = result.get("o", "")
 
-            # Exact match
+            # Exact match - full value, not just the local name: two
+            # genuinely different URIs should never count as an exact match
+            # just because they share a local name.
             if result_value == expected_object:
                 return {"matched": True, "score": 1.0, "expected": result_value}
 
-            # Fuzzy match using Levenshtein ratio
+            # Fuzzy match using Levenshtein ratio, on local names only - see
+            # _local_name's docstring for why the full URI isn't compared.
             similarity = Levenshtein.ratio(
-                expected_object.lower(), result_value.lower()
+                self._local_name(expected_object).lower(),
+                self._local_name(result_value).lower(),
             )
 
             if similarity > best_match_score:

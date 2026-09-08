@@ -21,6 +21,19 @@ and fixed during verification (see below, "0."). P1 items #4 fixed; #5, #6
 left as-is (architecture/behavior calls, see notes) for the next debugging
 pass rather than silently redesigned.
 
+**Status (2026-09-08, third pass - live debugging via `caval`):** batch-testing
+`caval` against real prompts against the live KB (see #12 for the batch
+methodology) surfaced a 0/6 verification rate even on prompts mapping to
+real one-hop KB edges - three compounding causes, all found and fixed:
+the LLM never gave an atomic answer (#13, prompt fix), a `ccomp` parsing
+gap silently dropped triplets from "X causes Y to Z" phrasing plus the
+original #12 case (#12, now fully fixed), and a false-positive verification
+bug where fabricated and real URIs were compared as full strings instead of
+by local name (#14 - the dangerous direction, since it reports something as
+VERIFIED when the KB doesn't actually support it). After all three: 7/7 on
+a regression suite (5 true one-hop claims verify in 0 iterations, 2 false
+claims correctly rejected).
+
 ---
 
 ## P0 - blocks running it
@@ -132,7 +145,7 @@ requests behind whatever Fuseki round-trip is currently in flight; the
 **Fix:** wrap the blocking calls in `asyncio.to_thread(...)`, or switch to
 an async SPARQL client.
 
-### 5. Object-matching in `TruthAnchor` compares incompatible strings
+### 5. Object-matching in `TruthAnchor` compares incompatible strings - PARTIALLY FIXED
 When `SemanticParser._get_entity_uri()` can't confidently link an entity
 (score \<= 0.7), it fabricates a local URI like `http://local.caf/slippery_road`
 ([modules/semantic_parser/parser.py:376-390](modules/semantic_parser/parser.py#L376-L390)). That fabricated URI then
@@ -144,10 +157,23 @@ is close to meaningless - it will almost always read as a contradiction,
 even when the KB does contain the fact, unless the fallback URI happens to
 share a long substring with the real one.
 
-**Fix:** at minimum, treat "object failed entity linking" as its own
-verification outcome (e.g. `PARTIAL`/`FAILED`, not silently compared as if
-it were a resolved URI) rather than feeding a fabricated URI into the
-similarity comparison. `experiments/knowledge_base_fvl.py`'s FVL (used by
+**FIXED (the dangerous half - false positives):** live-debugging `caval`
+against the real KB turned up the other, worse direction this same root
+cause produces: `_verify_object_match` was comparing *full URI strings*,
+so two *different* entities in the same namespace (`.../pod_restart` vs the
+real `.../pod_rotation`) scored 0.88 similarity purely from the ~20
+shared prefix characters, cleared the 0.8 threshold, and reported
+`VERIFIED` for a claim the KB doesn't actually support - see #14. Fixed by
+comparing local names only (`TruthAnchor._local_name()`), not full URIs.
+Confirmed the same pair now scores 0.70, correctly below threshold, and a
+7-case regression suite still passes.
+
+**Still open (the conservative half - false negatives):** the underlying
+"object failed entity linking" case still isn't its own verification
+outcome - a fabricated URI still gets compared as if it were resolved, just
+now only on local name instead of full URI, so it can still read as a
+contradiction rather than "unverifiable" when entity linking genuinely
+fails to find a match. `experiments/knowledge_base_fvl.py`'s FVL (used by
 the `experiments/` path) does not have this problem - worth comparing the
 two approaches directly (see #7).
 
@@ -220,7 +246,7 @@ from spaCy's raw verb token, which is unlikely to literally contain strings
 like `resultin` or `leadto`. Most of this keyword list can currently never
 match what the parser actually produces.
 
-### 12. Concrete example of the "naive extractor" gotcha already in README
+### 12. Concrete example of the "naive extractor" gotcha already in README - FIXED
 Found while smoke-testing #4's fix against real KB data (a small
 k8s/microservices causal graph, 92 triples, loaded via the companion
 causal-discovery repo per the README). The KB contains a genuinely true
@@ -238,17 +264,68 @@ check      compound -> timeout
 timeout    ccomp    -> causes
 ```
 - an artifact of spaCy's general-domain model on compound technical nouns
-("health check timeout" reads to it like it could be a reduced clause), not
-a bug in `_parse_text`'s dobj/attr/pobj/prep-pobj child search added for #7
-below - that logic is doing the right thing with what spaCy hands it. Two
-adjacent sentences with the same "X causes Y" shape and comparable object
-length parsed fine (see the smoke test), so this isn't a length or
-compound-noun-count issue in general - it's sentence-specific to how spaCy's
-parser happens to tag "timeout" here. Worth a wider check of which real
-KB-derived phrasings get silently dropped this way before trusting FAILED
-results at face value; not fixed here since patching dependency-parse
-heuristics for one lexical case invites whack-a-mole without broader
-sampling first.
+("health check timeout" reads to it like it could be a reduced clause).
+
+**FIXED**, alongside a second, related `ccomp` case found via live batch-testing
+`caval`: "X causes Y to Z" (accusative-with-infinitive, e.g. "causes database
+connections to rise") also attaches as a `ccomp` of "causes", but as a
+*genuine* infinitival clause with its own subject ("connections" is `nsubj`
+of "rise") - a very common causal phrasing an LLM defaults to, and before
+this fix it also silently produced zero triplets. `_parse_text`'s
+dobj/attr/pobj/prep-pobj child search ([modules/semantic_parser/parser.py](modules/semantic_parser/parser.py))
+now also handles `ccomp`: if the ccomp token has its own nsubj, that's the
+object (the "to Z" case); if it doesn't (a plain noun mis-tagged as ccomp,
+the original "timeout" case above), the ccomp token itself is the object.
+Both confirmed fixed individually and via a 7-case regression suite
+end-to-end through `caval`.
+
+### 13. LLM never gave an atomic, extractable answer - FIXED (prompt)
+Batch-testing `caval` against 6 prompts mapping to real one-hop KB edges got
+0/6 `VERIFIED`, not because the claims were false but because the model
+(Qwen3-14B, HF/4-bit path) always elaborated into a multi-step explanation
+("garbage collection triggers memory reclamation, which increases CPU
+utilization...") instead of stating the one-hop fact plainly - the naive SVO
+parser (see #12) can't reduce a paragraph back down to the KB's atomic
+`(subject, causes, object)` shape.
+
+**Fix:** tightened `InferenceEngine._causal_task_instructions()`
+([modules/inference_engine/engine.py](modules/inference_engine/engine.py))
+- shared by both the vLLM and HF generation paths - to demand exactly one
+short "X causes Y" sentence (2-4 word noun phrases, no subordinate clauses,
+no mechanism explanation) plus a single causal-assertion bullet reusing the
+identical wording, rather than vaguely asking for "a clear, accurate answer"
+plus "precise, verifiable statements". After the fix: 5/5 true one-hop
+claims verified immediately (0 refinement iterations) on the same KB.
+Requires restarting the running inference-engine server process to take
+effect (prompt construction happens per-request, but the module is only
+imported once at process start).
+
+Known remaining gap: only fixes convergence for direct one-hop facts: a
+question whose true answer requires multiple hops (not present in this KB
+yet) will still need the model to name intermediate KB nodes explicitly,
+which this prompt doesn't yet ask for.
+
+### 14. False-positive verification: full-URI Levenshtein comparison - FIXED
+Sharper, more dangerous variant of #5's root cause, found via live
+batch-testing: `TruthAnchor._verify_object_match()` Levenshtein-compared
+*full URI strings*. `"health check timeout causes pod restart"` (the model's
+paraphrase; the KB only has `pod_rotation`, not `pod_restart`) verified as
+`VERIFIED: True`, because `http://local.caf/pod_restart` vs the real
+`http://local.caf/pod_rotation` scores 0.877 similarity - not because
+"restart" and "rotation" are alike, but because ~20 of the ~30 characters
+are the shared `http://local.caf/pod_` namespace prefix, comfortably over
+the 0.8 threshold. Confirmed via direct calculation
+(`Levenshtein.ratio(a.lower(), b.lower())` on the full strings) before
+fixing. This is the dangerous direction for a system whose entire premise
+is deterministic truth-grounding: it reports confidence in a claim the KB
+does not actually support.
+
+**Fix:** added `TruthAnchor._local_name()` (extracts the part after the
+last `/` or `#`) and compare local names only for the fuzzy match, keeping
+the full-string comparison for the exact-match fast path. Same pair now
+scores 0.696, correctly below threshold. Confirmed via a 7-case regression
+suite (5 true claims still verify, 2 false claims still correctly reject)
+that this didn't introduce new false negatives.
 
 ### 11. Unused `causality:` SPARQL prefix
 `SemanticParser._generate_sparql` declares `PREFIX causality: <http://causality.org/>`

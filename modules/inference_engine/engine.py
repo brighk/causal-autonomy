@@ -119,15 +119,21 @@ class InferenceEngine:
         constraint-injection entirely to HuggingFaceCausalLMLayer.
         """
         return (
-            "Provide a clear, accurate answer, then state the causal "
-            "relationships or facts that support it as precise, verifiable "
-            "statements.\n\n"
+            'Answer in exactly ONE short sentence, in the form "X causes Y" '
+            '(or "X does not cause Y"), naming only the two things directly '
+            "involved. Use short noun phrases (2-4 words) for X and Y - no "
+            'subordinate clauses ("which...", "because...", "that..."), no '
+            "explanation of the mechanism, no intermediate steps - even if you "
+            "know more about how or why. Only elaborate if the question "
+            'explicitly asks "how" or "why".\n\n'
+            "Then restate that same single relationship as one causal "
+            "assertion, reusing the exact same noun phrases as your answer - "
+            "not a paraphrase, not a restatement in different words, not an "
+            "additional or more detailed claim.\n\n"
             "Format your response as:\n"
-            "ANSWER: [your response]\n"
+            "ANSWER: [X causes Y]\n"
             "CAUSAL_ASSERTIONS:\n"
-            "- [assertion 1]\n"
-            "- [assertion 2]\n"
-            "..."
+            "- [X causes Y]"
         )
 
     def _build_causal_prompt(

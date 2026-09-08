@@ -401,6 +401,35 @@ class SemanticParser:
                             if prep_obj is not None:
                                 object_ = self._extract_entity_text(prep_obj, doc)
                                 break
+                        if child.dep_ == "ccomp":
+                            # "X causes Y to Z" (accusative-with-infinitive):
+                            # spaCy attaches "Z" as a ccomp of "causes", with
+                            # "Y" as Z's own nsubj - not as a dobj/pobj of
+                            # "causes" at all. This is a very common causal
+                            # phrasing ("causes database connections to
+                            # rise"/"...to increase"), and without this case
+                            # a perfectly clean, atomic causal sentence
+                            # silently produced zero triplets.
+                            ccomp_subj = next(
+                                (
+                                    gc
+                                    for gc in child.children
+                                    if gc.dep_ in ("nsubj", "nsubjpass")
+                                ),
+                                None,
+                            )
+                            if ccomp_subj is not None:
+                                object_ = self._extract_entity_text(ccomp_subj, doc)
+                                break
+                            # No subject on the ccomp token itself: not a
+                            # genuine infinitival clause, just spaCy
+                            # mis-tagging what should be a plain direct
+                            # object as ccomp (e.g. "causes health check
+                            # timeout." tags "timeout" as ccomp with no
+                            # children beyond its own compound modifiers).
+                            # Treat the ccomp token itself as the object.
+                            object_ = self._extract_entity_text(child, doc)
+                            break
 
                     if object_:
                         # Link entities to URIs
