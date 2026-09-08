@@ -1,4 +1,5 @@
 """Module D: Causal Validator (Verification)"""
-from .validator import CausalValidator, CausalGraph, ValidationResult
 
-__all__ = ['CausalValidator', 'CausalGraph', 'ValidationResult']
+from .validator import CausalGraph, CausalValidator, ValidationResult
+
+__all__ = ["CausalValidator", "CausalGraph", "ValidationResult"]

@@ -11,17 +11,16 @@ Features:
 - Supports contradiction injection for stress testing
 """
 
-import random
 import json
-import hashlib
-from dataclasses import dataclass, field, asdict
+import random
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-import re
 
 
 class PerturbationType(Enum):
     """Types of prompt perturbations for semantic invariance testing."""
+
     PARAPHRASE = "paraphrase"
     DOUBLE_NEGATION = "double_negation"
     LEXICAL_NOISE = "lexical_noise"
@@ -31,6 +30,7 @@ class PerturbationType(Enum):
 
 class RelationType(Enum):
     """Types of causal/logical relations in chains."""
+
     CAUSES = "causes"
     IMPLIES = "implies"
     ENABLES = "enables"
@@ -42,6 +42,7 @@ class RelationType(Enum):
 @dataclass
 class LogicalStep:
     """A single step in a causal chain."""
+
     antecedent: str
     consequent: str
     relation: RelationType
@@ -72,6 +73,7 @@ class LogicalStep:
 @dataclass
 class PromptPerturbation:
     """A perturbed version of a prompt for invariance testing."""
+
     original_prompt: str
     perturbed_prompt: str
     perturbation_type: PerturbationType
@@ -82,6 +84,7 @@ class PromptPerturbation:
 @dataclass
 class CausalChain:
     """A complete causal chain with metadata."""
+
     chain_id: str
     steps: list[LogicalStep]
     domain: str
@@ -111,7 +114,9 @@ class CausalChain:
         premises = [f"Given: {self.steps[0].antecedent}"]
         for step in self.steps:
             premises.append(f"- {step.to_natural_language()}")
-        premises.append(f"\nQuestion: What can we conclude about {self.final_conclusion}?")
+        premises.append(
+            f"\nQuestion: What can we conclude about {self.final_conclusion}?"
+        )
         return "\n".join(premises)
 
     def get_intermediate_conclusions(self) -> list[str]:
@@ -131,66 +136,159 @@ class SyntheticDatasetGenerator:
     DOMAIN_TEMPLATES = {
         "physics": {
             "entities": [
-                "temperature", "pressure", "volume", "energy", "mass",
-                "velocity", "acceleration", "force", "momentum", "heat",
-                "friction", "gravity", "resistance", "current", "voltage"
+                "temperature",
+                "pressure",
+                "volume",
+                "energy",
+                "mass",
+                "velocity",
+                "acceleration",
+                "force",
+                "momentum",
+                "heat",
+                "friction",
+                "gravity",
+                "resistance",
+                "current",
+                "voltage",
             ],
             "relations": [
                 ("temperature increases", "pressure increases", RelationType.CAUSES),
                 ("pressure increases", "volume decreases", RelationType.LEADS_TO),
                 ("force applied", "acceleration occurs", RelationType.CAUSES),
                 ("friction present", "heat generated", RelationType.LEADS_TO),
-                ("mass increases", "gravitational pull strengthens", RelationType.CAUSES),
+                (
+                    "mass increases",
+                    "gravitational pull strengthens",
+                    RelationType.CAUSES,
+                ),
                 ("voltage increases", "current increases", RelationType.LEADS_TO),
                 ("resistance increases", "current decreases", RelationType.CAUSES),
                 ("energy added", "temperature rises", RelationType.LEADS_TO),
-                ("momentum conserved", "total momentum unchanged", RelationType.IMPLIES),
-                ("heat transferred", "thermal equilibrium reached", RelationType.LEADS_TO),
-            ]
+                (
+                    "momentum conserved",
+                    "total momentum unchanged",
+                    RelationType.IMPLIES,
+                ),
+                (
+                    "heat transferred",
+                    "thermal equilibrium reached",
+                    RelationType.LEADS_TO,
+                ),
+            ],
         },
         "biology": {
             "entities": [
-                "cell division", "protein synthesis", "DNA replication", "metabolism",
-                "photosynthesis", "respiration", "enzyme activity", "mutation",
-                "immune response", "hormone release", "neurotransmission", "gene expression"
+                "cell division",
+                "protein synthesis",
+                "DNA replication",
+                "metabolism",
+                "photosynthesis",
+                "respiration",
+                "enzyme activity",
+                "mutation",
+                "immune response",
+                "hormone release",
+                "neurotransmission",
+                "gene expression",
             ],
             "relations": [
-                ("DNA replication occurs", "cell division begins", RelationType.ENABLES),
+                (
+                    "DNA replication occurs",
+                    "cell division begins",
+                    RelationType.ENABLES,
+                ),
                 ("mutation happens", "protein structure changes", RelationType.CAUSES),
-                ("enzyme activity increases", "reaction rate accelerates", RelationType.LEADS_TO),
-                ("immune response triggered", "antibodies produced", RelationType.CAUSES),
+                (
+                    "enzyme activity increases",
+                    "reaction rate accelerates",
+                    RelationType.LEADS_TO,
+                ),
+                (
+                    "immune response triggered",
+                    "antibodies produced",
+                    RelationType.CAUSES,
+                ),
                 ("hormone released", "target cells activated", RelationType.LEADS_TO),
                 ("photosynthesis occurs", "glucose produced", RelationType.CAUSES),
                 ("respiration increases", "ATP generated", RelationType.LEADS_TO),
                 ("gene expressed", "protein synthesized", RelationType.CAUSES),
-                ("neurotransmitter released", "signal transmitted", RelationType.ENABLES),
-                ("metabolism increases", "energy consumption rises", RelationType.LEADS_TO),
-            ]
+                (
+                    "neurotransmitter released",
+                    "signal transmitted",
+                    RelationType.ENABLES,
+                ),
+                (
+                    "metabolism increases",
+                    "energy consumption rises",
+                    RelationType.LEADS_TO,
+                ),
+            ],
         },
         "economics": {
             "entities": [
-                "demand", "supply", "price", "inflation", "unemployment",
-                "interest rates", "GDP", "investment", "consumption", "exports",
-                "imports", "currency value", "tax rates", "government spending"
+                "demand",
+                "supply",
+                "price",
+                "inflation",
+                "unemployment",
+                "interest rates",
+                "GDP",
+                "investment",
+                "consumption",
+                "exports",
+                "imports",
+                "currency value",
+                "tax rates",
+                "government spending",
             ],
             "relations": [
                 ("demand increases", "price rises", RelationType.CAUSES),
                 ("supply decreases", "price rises", RelationType.CAUSES),
                 ("interest rates rise", "borrowing decreases", RelationType.LEADS_TO),
-                ("inflation increases", "purchasing power decreases", RelationType.CAUSES),
-                ("unemployment rises", "consumer spending falls", RelationType.LEADS_TO),
+                (
+                    "inflation increases",
+                    "purchasing power decreases",
+                    RelationType.CAUSES,
+                ),
+                (
+                    "unemployment rises",
+                    "consumer spending falls",
+                    RelationType.LEADS_TO,
+                ),
                 ("GDP grows", "investment increases", RelationType.ENABLES),
-                ("tax rates increase", "disposable income decreases", RelationType.CAUSES),
+                (
+                    "tax rates increase",
+                    "disposable income decreases",
+                    RelationType.CAUSES,
+                ),
                 ("exports increase", "currency strengthens", RelationType.LEADS_TO),
-                ("government spending rises", "aggregate demand increases", RelationType.CAUSES),
-                ("investment increases", "economic growth accelerates", RelationType.LEADS_TO),
-            ]
+                (
+                    "government spending rises",
+                    "aggregate demand increases",
+                    RelationType.CAUSES,
+                ),
+                (
+                    "investment increases",
+                    "economic growth accelerates",
+                    RelationType.LEADS_TO,
+                ),
+            ],
         },
         "logic": {
             "entities": [
-                "proposition P", "proposition Q", "proposition R", "proposition S",
-                "statement A", "statement B", "condition X", "condition Y",
-                "hypothesis H", "conclusion C", "premise M", "inference I"
+                "proposition P",
+                "proposition Q",
+                "proposition R",
+                "proposition S",
+                "statement A",
+                "statement B",
+                "condition X",
+                "condition Y",
+                "hypothesis H",
+                "conclusion C",
+                "premise M",
+                "inference I",
             ],
             "relations": [
                 ("P is true", "Q is true", RelationType.IMPLIES),
@@ -203,14 +301,26 @@ class SyntheticDatasetGenerator:
                 ("P or Q holds", "at least one true", RelationType.IMPLIES),
                 ("P and Q hold", "P holds", RelationType.IMPLIES),
                 ("if P then Q, P holds", "Q holds", RelationType.IMPLIES),
-            ]
+            ],
         },
         "causality": {
             "entities": [
-                "rain", "wet ground", "slippery roads", "traffic accidents",
-                "flood", "crop damage", "food shortage", "price increase",
-                "fire", "smoke", "alarm trigger", "evacuation",
-                "storm", "power outage", "data loss", "business disruption"
+                "rain",
+                "wet ground",
+                "slippery roads",
+                "traffic accidents",
+                "flood",
+                "crop damage",
+                "food shortage",
+                "price increase",
+                "fire",
+                "smoke",
+                "alarm trigger",
+                "evacuation",
+                "storm",
+                "power outage",
+                "data loss",
+                "business disruption",
             ],
             "relations": [
                 ("rain falls", "ground becomes wet", RelationType.CAUSES),
@@ -223,8 +333,8 @@ class SyntheticDatasetGenerator:
                 ("smoke detected", "alarm triggers", RelationType.LEADS_TO),
                 ("alarm triggers", "evacuation begins", RelationType.CAUSES),
                 ("storm arrives", "power outage occurs", RelationType.CAUSES),
-            ]
-        }
+            ],
+        },
     }
 
     # Paraphrase templates for perturbation
@@ -254,10 +364,7 @@ class SyntheticDatasetGenerator:
         self.chain_counter = 0
 
     def generate_chain(
-        self,
-        depth: int,
-        domain: str,
-        inject_contradiction: bool = False
+        self, depth: int, domain: str, inject_contradiction: bool = False
     ) -> CausalChain:
         """
         Generate a single causal chain with specified depth and domain.
@@ -284,12 +391,14 @@ class SyntheticDatasetGenerator:
 
         # Start with a random relation
         current_rel = available_relations.pop(0)
-        steps.append(LogicalStep(
-            antecedent=current_rel[0],
-            consequent=current_rel[1],
-            relation=current_rel[2],
-            step_number=0
-        ))
+        steps.append(
+            LogicalStep(
+                antecedent=current_rel[0],
+                consequent=current_rel[1],
+                relation=current_rel[2],
+                step_number=0,
+            )
+        )
         used_relations.add(current_rel)
 
         # Build chain up to desired depth
@@ -302,12 +411,14 @@ class SyntheticDatasetGenerator:
             for rel in available_relations:
                 if rel not in used_relations:
                     # Use this relation with synthetic connection
-                    steps.append(LogicalStep(
-                        antecedent=current_consequent,
-                        consequent=rel[1],
-                        relation=rel[2],
-                        step_number=i
-                    ))
+                    steps.append(
+                        LogicalStep(
+                            antecedent=current_consequent,
+                            consequent=rel[1],
+                            relation=rel[2],
+                            step_number=i,
+                        )
+                    )
                     used_relations.add(rel)
                     found_connection = True
                     break
@@ -317,12 +428,14 @@ class SyntheticDatasetGenerator:
                 entities = templates["entities"]
                 new_consequent = random.choice(entities)
                 relation_type = random.choice(list(RelationType))
-                steps.append(LogicalStep(
-                    antecedent=current_consequent,
-                    consequent=f"{new_consequent} changes",
-                    relation=relation_type,
-                    step_number=i
-                ))
+                steps.append(
+                    LogicalStep(
+                        antecedent=current_consequent,
+                        consequent=f"{new_consequent} changes",
+                        relation=relation_type,
+                        step_number=i,
+                    )
+                )
 
         # Generate chain ID
         self.chain_counter += 1
@@ -330,7 +443,9 @@ class SyntheticDatasetGenerator:
 
         # Calculate complexity score based on depth and relation diversity
         unique_relations = len(set(step.relation for step in steps))
-        complexity_score = (depth * 0.3) + (unique_relations * 0.2) + random.uniform(0, 0.5)
+        complexity_score = (
+            (depth * 0.3) + (unique_relations * 0.2) + random.uniform(0, 0.5)
+        )
 
         # Generate ground truth entailments
         ground_truth = self._generate_ground_truth(steps)
@@ -352,7 +467,7 @@ class SyntheticDatasetGenerator:
                 "seed": self.seed,
                 "generated_depth": depth,
                 "actual_depth": len(steps),
-            }
+            },
         )
 
     def _generate_ground_truth(self, steps: list[LogicalStep]) -> list[str]:
@@ -397,9 +512,7 @@ class SyntheticDatasetGenerator:
         return random.choice(contradiction_templates)
 
     def generate_perturbations(
-        self,
-        chain: CausalChain,
-        num_perturbations: int = 3
+        self, chain: CausalChain, num_perturbations: int = 3
     ) -> list[PromptPerturbation]:
         """
         Generate prompt perturbations for semantic invariance testing.
@@ -433,10 +546,7 @@ class SyntheticDatasetGenerator:
         return perturbations
 
     def _apply_perturbation(
-        self,
-        prompt: str,
-        chain: CausalChain,
-        ptype: PerturbationType
+        self, prompt: str, chain: CausalChain, ptype: PerturbationType
     ) -> PromptPerturbation:
         """Apply a specific perturbation type to a prompt."""
 
@@ -465,7 +575,7 @@ class SyntheticDatasetGenerator:
             perturbed_prompt=perturbed,
             perturbation_type=ptype,
             expected_same_output=True,
-            perturbation_details=details
+            perturbation_details=details,
         )
 
     def _paraphrase(self, prompt: str) -> str:
@@ -498,8 +608,7 @@ class SyntheticDatasetGenerator:
     def _reorder_premises(self, prompt: str, chain: CausalChain) -> str:
         """Reorder premises while maintaining logical validity."""
         lines = prompt.split("\n")
-        premise_lines = [l for l in lines if l.startswith("- ")]
-        other_lines = [l for l in lines if not l.startswith("- ")]
+        premise_lines = [line for line in lines if line.startswith("- ")]
 
         if len(premise_lines) > 1:
             # Shuffle middle premises, keep first and last
@@ -527,7 +636,7 @@ class SyntheticDatasetGenerator:
         max_depth: int = 10,
         perturbations_per_chain: int = 3,
         contradiction_rate: float = 0.2,
-        domains: list[str] | None = None
+        domains: list[str] | None = None,
     ) -> list[CausalChain]:
         """
         Generate a complete synthetic dataset.
@@ -556,9 +665,7 @@ class SyntheticDatasetGenerator:
 
             # Generate chain
             chain = self.generate_chain(
-                depth=depth,
-                domain=domain,
-                inject_contradiction=inject_contradiction
+                depth=depth, domain=domain, inject_contradiction=inject_contradiction
             )
 
             # Generate perturbations
@@ -569,10 +676,7 @@ class SyntheticDatasetGenerator:
         return dataset
 
     def export_dataset(
-        self,
-        dataset: list[CausalChain],
-        output_path: str,
-        format: str = "json"
+        self, dataset: list[CausalChain], output_path: str, format: str = "json"
     ) -> str:
         """
         Export dataset to file.
@@ -596,11 +700,11 @@ class SyntheticDatasetGenerator:
                     "domains": list(set(c.domain for c in dataset)),
                     "depth_range": (
                         min(c.depth for c in dataset),
-                        max(c.depth for c in dataset)
+                        max(c.depth for c in dataset),
                     ),
                     "seed": self.seed,
                 },
-                "chains": [self._chain_to_dict(c) for c in dataset]
+                "chains": [self._chain_to_dict(c) for c in dataset],
             }
             with open(output_path, "w") as f:
                 json.dump(data, f, indent=2)
@@ -669,7 +773,7 @@ def generate_paper_dataset(output_dir: str = "experiments/data") -> str:
         max_depth=10,
         perturbations_per_chain=3,
         contradiction_rate=0.2,
-        domains=["physics", "biology", "economics", "logic", "causality"]
+        domains=["physics", "biology", "economics", "logic", "causality"],
     )
 
     output_path = f"{output_dir}/synthetic_causal_chains.json"
@@ -677,8 +781,12 @@ def generate_paper_dataset(output_dir: str = "experiments/data") -> str:
 
     print(f"Generated dataset with {len(dataset)} chains")
     print(f"Total perturbations: {sum(len(c.perturbations) for c in dataset)}")
-    print(f"Chains with contradictions: {sum(1 for c in dataset if c.injected_contradictions)}")
-    print(f"Depth range: {min(c.depth for c in dataset)} - {max(c.depth for c in dataset)}")
+    print(
+        f"Chains with contradictions: {sum(1 for c in dataset if c.injected_contradictions)}"
+    )
+    print(
+        f"Depth range: {min(c.depth for c in dataset)} - {max(c.depth for c in dataset)}"
+    )
     print(f"Output: {output_path}")
 
     return output_path

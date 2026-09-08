@@ -138,7 +138,7 @@ class InterventionCAFEvaluator(CounterBenchEvaluator):
                 iterations=0,
                 correct=False,
                 reasoning_type=reasoning_type,
-                response_text=f"Error: {str(e)}",
+                response_text=f"Error: {e!s}",
             )
 
         self.results.append(result)

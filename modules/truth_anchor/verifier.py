@@ -101,7 +101,7 @@ class TruthAnchor:
 
             except Exception as e:
                 logger.error(f"SPARQL query failed: {e}")
-                contradictions.append(f"Query execution error: {str(e)}")
+                contradictions.append(f"Query execution error: {e!s}")
 
         # Calculate overall validity
         is_valid = len(matched_triplets) > 0 and len(contradictions) == 0
@@ -231,7 +231,6 @@ LIMIT 10
 
         # TODO: Implement actual RDF upload to Fuseki
         # Can use requests library to POST to Fuseki's data endpoint
-        pass
 
     def is_healthy(self) -> bool:
         """Check if Fuseki is accessible"""

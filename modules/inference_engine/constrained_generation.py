@@ -9,14 +9,16 @@ Key Innovation:
 - Bias logits to prefer tokens aligned with KB
 - Discard tokens that would contradict ground truth
 """
-from typing import Any
-import torch
-from transformers import LogitsProcessor
-from SPARQLWrapper import SPARQLWrapper, JSON
-from loguru import logger
-import re
+
 import asyncio
+import re
 from functools import lru_cache
+from typing import Any
+
+import torch
+from loguru import logger
+from SPARQLWrapper import JSON, SPARQLWrapper
+from transformers import LogitsProcessor
 
 
 class RDFConstraintProcessor(LogitsProcessor):
@@ -34,7 +36,7 @@ class RDFConstraintProcessor(LogitsProcessor):
         tokenizer,
         fuseki_endpoint: str,
         penalty_weight: float = 10.0,
-        enable_logging: bool = False
+        enable_logging: bool = False,
     ):
         self.tokenizer = tokenizer
         self.fuseki_endpoint = fuseki_endpoint
@@ -51,9 +53,7 @@ class RDFConstraintProcessor(LogitsProcessor):
         logger.info(f"RDFConstraintProcessor initialized with penalty={penalty_weight}")
 
     def __call__(
-        self,
-        input_ids: torch.LongTensor,
-        scores: torch.FloatTensor
+        self, input_ids: torch.LongTensor, scores: torch.FloatTensor
     ) -> torch.FloatTensor:
         """
         Process logits to apply RDF constraints.
@@ -68,8 +68,7 @@ class RDFConstraintProcessor(LogitsProcessor):
         # Decode current partial generation
         for batch_idx in range(input_ids.shape[0]):
             partial_text = self.tokenizer.decode(
-                input_ids[batch_idx],
-                skip_special_tokens=True
+                input_ids[batch_idx], skip_special_tokens=True
             )
 
             # Extract constraints from KB based on partial text
@@ -78,9 +77,7 @@ class RDFConstraintProcessor(LogitsProcessor):
             if constraints:
                 # Apply penalties to violating tokens
                 scores[batch_idx] = self._apply_constraints(
-                    scores[batch_idx],
-                    partial_text,
-                    constraints
+                    scores[batch_idx], partial_text, constraints
                 )
 
         return scores
@@ -101,14 +98,11 @@ class RDFConstraintProcessor(LogitsProcessor):
             return {}
 
         # Query KB for each entity
-        constraints = {
-            'allowed_facts': [],
-            'prohibited_terms': set()
-        }
+        constraints = {"allowed_facts": [], "prohibited_terms": set()}
 
         for entity in entities:
             facts = self._query_entity_facts(entity)
-            constraints['allowed_facts'].extend(facts)
+            constraints["allowed_facts"].extend(facts)
 
         return constraints
 
@@ -120,10 +114,10 @@ class RDFConstraintProcessor(LogitsProcessor):
         For production, use spaCy NER.
         """
         # Look for capitalized words
-        entities = re.findall(r'\b[A-Z][a-z]+\b', text)
+        entities = re.findall(r"\b[A-Z][a-z]+\b", text)
 
         # Also check for common keywords
-        keywords = ['rain', 'sun', 'water', 'road', 'wet', 'dry', 'cause', 'effect']
+        keywords = ["rain", "sun", "water", "road", "wet", "dry", "cause", "effect"]
         for keyword in keywords:
             if keyword.lower() in text.lower():
                 entities.append(keyword)
@@ -160,11 +154,11 @@ LIMIT 10
             results = self.sparql.query().convert()
 
             facts = []
-            for binding in results.get('results', {}).get('bindings', []):
+            for binding in results.get("results", {}).get("bindings", []):
                 fact = {
-                    'predicate': binding.get('p', {}).get('value', ''),
-                    'object': binding.get('o', {}).get('value', ''),
-                    'object_label': binding.get('oLabel', {}).get('value', '')
+                    "predicate": binding.get("p", {}).get("value", ""),
+                    "object": binding.get("o", {}).get("value", ""),
+                    "object_label": binding.get("oLabel", {}).get("value", ""),
                 }
                 facts.append(fact)
 
@@ -180,10 +174,7 @@ LIMIT 10
             return []
 
     def _apply_constraints(
-        self,
-        scores: torch.FloatTensor,
-        partial_text: str,
-        constraints: dict[str, Any]
+        self, scores: torch.FloatTensor, partial_text: str, constraints: dict[str, Any]
     ) -> torch.FloatTensor:
         """
         Apply KB constraints to logits.
@@ -211,10 +202,7 @@ LIMIT 10
         return scores
 
     def _violates_constraints(
-        self,
-        partial_text: str,
-        next_token: str,
-        constraints: dict[str, Any]
+        self, partial_text: str, next_token: str, constraints: dict[str, Any]
     ) -> bool:
         """
         Check if adding next_token would violate KB constraints.
@@ -226,25 +214,25 @@ LIMIT 10
         future_text = partial_text + next_token
 
         # Check prohibited terms
-        for term in constraints.get('prohibited_terms', []):
+        for term in constraints.get("prohibited_terms", []):
             if term.lower() in future_text.lower():
                 return True
 
         # Check for contradictions with known facts
-        allowed_facts = constraints.get('allowed_facts', [])
+        allowed_facts = constraints.get("allowed_facts", [])
 
         # Example: If KB says "rain causes wet roads"
         # and partial text is "rain causes", penalize "dry"
         for fact in allowed_facts:
-            if 'causes' in fact.get('predicate', ''):
-                expected_object = fact.get('object_label', fact.get('object', ''))
+            if "causes" in fact.get("predicate", ""):
+                expected_object = fact.get("object_label", fact.get("object", ""))
 
                 # If we're generating after "causes", check alignment
-                if 'cause' in partial_text.lower() and expected_object:
+                if "cause" in partial_text.lower() and expected_object:
                     # If next token would introduce contradiction
-                    if 'wet' in expected_object and 'dry' in next_token.lower():
+                    if "wet" in expected_object and "dry" in next_token.lower():
                         return True
-                    if 'dry' in expected_object and 'wet' in next_token.lower():
+                    if "dry" in expected_object and "wet" in next_token.lower():
                         return True
 
         return False
@@ -262,7 +250,7 @@ class ConstrainedInferenceEngine:
         base_engine,
         fuseki_endpoint: str,
         constraint_strength: float = 10.0,
-        enable_constraint_logging: bool = False
+        enable_constraint_logging: bool = False,
     ):
         self.base_engine = base_engine
         self.fuseki_endpoint = fuseki_endpoint
@@ -272,10 +260,7 @@ class ConstrainedInferenceEngine:
         logger.info("ConstrainedInferenceEngine initialized")
 
     async def generate_constrained(
-        self,
-        prompt: str,
-        config,
-        constraints: list[str] | None = None
+        self, prompt: str, config, constraints: list[str] | None = None
     ) -> dict[str, Any]:
         """
         Generate text with RDF constraint satisfaction.
@@ -289,50 +274,46 @@ class ConstrainedInferenceEngine:
             tokenizer=self.base_engine.tokenizer,
             fuseki_endpoint=self.fuseki_endpoint,
             penalty_weight=self.constraint_strength,
-            enable_logging=self.enable_logging
+            enable_logging=self.enable_logging,
         )
 
         # Generate with constraints
         if self.base_engine.use_vllm:
             # vLLM doesn't support custom logit processors directly
             # Fall back to standard generation with post-validation
-            logger.warning("vLLM doesn't support custom logit processors, using post-validation")
+            logger.warning(
+                "vLLM doesn't support custom logit processors, using post-validation"
+            )
             result = await self.base_engine._generate_vllm(formatted_prompt, config)
         else:
             # Use HuggingFace with custom logit processor
             result = await self._generate_constrained_hf(
-                formatted_prompt,
-                config,
-                constraint_processor
+                formatted_prompt, config, constraint_processor
             )
 
         # Parse response
-        parsed = self.base_engine._parse_response(result['text'])
+        parsed = self.base_engine._parse_response(result["text"])
 
         return {
-            'text': parsed['answer'],
-            'causal_assertions_raw': parsed['assertions'],
-            'full_response': result['text'],
-            'metadata': {
-                **result.get('metadata', {}),
-                'constraint_satisfaction': 'enabled',
-                'fuseki_endpoint': self.fuseki_endpoint
-            }
+            "text": parsed["answer"],
+            "causal_assertions_raw": parsed["assertions"],
+            "full_response": result["text"],
+            "metadata": {
+                **result.get("metadata", {}),
+                "constraint_satisfaction": "enabled",
+                "fuseki_endpoint": self.fuseki_endpoint,
+            },
         }
 
     async def _generate_constrained_hf(
-        self,
-        prompt: str,
-        config,
-        constraint_processor: RDFConstraintProcessor
+        self, prompt: str, config, constraint_processor: RDFConstraintProcessor
     ) -> dict[str, Any]:
         """
         Generate using HuggingFace with custom logit processor.
         """
-        inputs = self.base_engine.tokenizer(
-            prompt,
-            return_tensors="pt"
-        ).to(self.base_engine.model.device)
+        inputs = self.base_engine.tokenizer(prompt, return_tensors="pt").to(
+            self.base_engine.model.device
+        )
 
         outputs = await asyncio.to_thread(
             self.base_engine.model.generate,
@@ -343,18 +324,17 @@ class ConstrainedInferenceEngine:
             top_k=config.top_k,
             repetition_penalty=config.repetition_penalty,
             do_sample=True,
-            logits_processor=[constraint_processor]  # KEY: Apply RDF constraints
+            logits_processor=[constraint_processor],  # KEY: Apply RDF constraints
         )
 
         generated_text = self.base_engine.tokenizer.decode(
-            outputs[0][inputs['input_ids'].shape[1]:],
-            skip_special_tokens=True
+            outputs[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True
         )
 
         return {
-            'text': generated_text,
-            'metadata': {
-                'tokens_generated': outputs.shape[1] - inputs['input_ids'].shape[1],
-                'constrained': True
-            }
+            "text": generated_text,
+            "metadata": {
+                "tokens_generated": outputs.shape[1] - inputs["input_ids"].shape[1],
+                "constrained": True,
+            },
         }

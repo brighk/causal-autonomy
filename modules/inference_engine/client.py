@@ -2,11 +2,11 @@
 Client for communicating with the Inference Engine service.
 Uses gRPC for high-throughput, low-latency communication.
 """
-from typing import Any
+
 import httpx
 from loguru import logger
 
-from api.models import InferenceRequest, ResponseCandidate, CausalAssertion
+from api.models import CausalAssertion, InferenceRequest, ResponseCandidate
 
 
 class InferenceEngineClient:
@@ -28,8 +28,7 @@ class InferenceEngineClient:
         """
         try:
             response = await self.client.post(
-                f"{self.base_url}/generate",
-                json=request.model_dump()
+                f"{self.base_url}/generate", json=request.model_dump()
             )
             response.raise_for_status()
 
@@ -40,15 +39,15 @@ class InferenceEngineClient:
                 CausalAssertion(
                     assertion_text=assertion,
                     triplets=[],  # Will be populated by semantic parser
-                    confidence=0.9  # Default confidence
+                    confidence=0.9,  # Default confidence
                 )
-                for assertion in data.get('causal_assertions_raw', [])
+                for assertion in data.get("causal_assertions_raw", [])
             ]
 
             return ResponseCandidate(
-                text=data['text'],
+                text=data["text"],
                 causal_assertions=causal_assertions,
-                generation_metadata=data.get('metadata', {})
+                generation_metadata=data.get("metadata", {}),
             )
 
         except httpx.HTTPError as e:

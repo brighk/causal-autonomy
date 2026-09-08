@@ -9,9 +9,8 @@ Implementations of baseline approaches to compare against CAF:
 These baselines help demonstrate CAF's superiority in the paper.
 """
 
-from typing import Any
-from dataclasses import dataclass
 import random
+from dataclasses import dataclass
 
 from experiments.caf_algorithm import InferenceLayer
 from experiments.synthetic_dataset import CausalChain
@@ -20,10 +19,11 @@ from experiments.synthetic_dataset import CausalChain
 @dataclass
 class BaselineConfig:
     """Configuration for baseline methods."""
+
     use_cot: bool = False  # Enable Chain of Thought
     use_rag: bool = False  # Enable RAG
-    rag_top_k: int = 3     # Number of facts to retrieve for RAG
-    cot_steps: int = 3     # Number of reasoning steps for CoT
+    rag_top_k: int = 3  # Number of facts to retrieve for RAG
+    cot_steps: int = 3  # Number of reasoning steps for CoT
 
 
 class VanillaLLMBaseline(InferenceLayer):
@@ -36,11 +36,7 @@ class VanillaLLMBaseline(InferenceLayer):
     def __init__(self, base_llm: InferenceLayer):
         self.base_llm = base_llm
 
-    def generate(
-        self,
-        prompt: str,
-        constraints: list[str] | None = None
-    ) -> str:
+    def generate(self, prompt: str, constraints: list[str] | None = None) -> str:
         """Generate response without any enhancements."""
         # Ignore constraints for vanilla baseline
         return self.base_llm.generate(prompt, constraints=None)
@@ -79,17 +75,13 @@ Show your reasoning for each step."""
 
         return cot_instruction
 
-    def generate(
-        self,
-        prompt: str,
-        constraints: list[str] | None = None
-    ) -> str:
+    def generate(self, prompt: str, constraints: list[str] | None = None) -> str:
         """Generate with Chain of Thought prompting."""
         cot_prompt = self._create_cot_prompt(prompt)
 
         # Add constraints if provided (though vanilla CoT doesn't typically use them)
         if constraints:
-            cot_prompt += f"\n\nAdditional considerations:\n"
+            cot_prompt += "\n\nAdditional considerations:\n"
             for i, constraint in enumerate(constraints, 1):
                 cot_prompt += f"{i}. {constraint}\n"
 
@@ -113,7 +105,7 @@ class RAGBaseline(InferenceLayer):
         self,
         base_llm: InferenceLayer,
         knowledge_base: dict[str, list[str]] | None = None,
-        top_k: int = 3
+        top_k: int = 3,
     ):
         self.base_llm = base_llm
         self.knowledge_base = knowledge_base or {}
@@ -177,9 +169,7 @@ class RAGBaseline(InferenceLayer):
         return retrieved
 
     def _create_rag_prompt(
-        self,
-        original_prompt: str,
-        retrieved_facts: list[str]
+        self, original_prompt: str, retrieved_facts: list[str]
     ) -> str:
         """Create RAG prompt with retrieved context."""
         if not retrieved_facts:
@@ -195,10 +185,7 @@ class RAGBaseline(InferenceLayer):
         return rag_prompt
 
     def generate(
-        self,
-        prompt: str,
-        constraints: list[str] | None = None,
-        domain: str = None
+        self, prompt: str, constraints: list[str] | None = None, domain: str = None
     ) -> str:
         """Generate with retrieval-augmented prompting."""
         # Retrieve relevant facts
@@ -209,7 +196,7 @@ class RAGBaseline(InferenceLayer):
 
         # Add constraints if provided
         if constraints:
-            rag_prompt += f"\n\nAdditional constraints:\n"
+            rag_prompt += "\n\nAdditional constraints:\n"
             for constraint in constraints:
                 rag_prompt += f"- {constraint}\n"
 
@@ -233,7 +220,7 @@ class HybridRAGCoTBaseline(InferenceLayer):
         base_llm: InferenceLayer,
         knowledge_base: dict[str, list[str]] | None = None,
         top_k: int = 3,
-        num_steps: int = 3
+        num_steps: int = 3,
     ):
         self.rag = RAGBaseline(base_llm, knowledge_base, top_k)
         self.cot_steps = num_steps
@@ -243,10 +230,7 @@ class HybridRAGCoTBaseline(InferenceLayer):
         self.rag.set_knowledge_base(causal_chain)
 
     def generate(
-        self,
-        prompt: str,
-        constraints: list[str] | None = None,
-        domain: str = None
+        self, prompt: str, constraints: list[str] | None = None, domain: str = None
     ) -> str:
         """Generate with both RAG and CoT."""
         # Retrieve facts
@@ -258,13 +242,15 @@ class HybridRAGCoTBaseline(InferenceLayer):
             hybrid_prompt += f"{i}. {fact}\n"
 
         hybrid_prompt += f"\n{prompt}\n\n"
-        hybrid_prompt += f"Let's reason through this step-by-step using the facts above:\n"
+        hybrid_prompt += (
+            "Let's reason through this step-by-step using the facts above:\n"
+        )
         hybrid_prompt += "1. First, identify which facts are most relevant\n"
         hybrid_prompt += "2. Then, analyze how they connect logically\n"
         hybrid_prompt += "3. Finally, draw a conclusion grounded in the facts\n"
 
         if constraints:
-            hybrid_prompt += f"\nConstraints to consider:\n"
+            hybrid_prompt += "\nConstraints to consider:\n"
             for constraint in constraints:
                 hybrid_prompt += f"- {constraint}\n"
 
@@ -273,31 +259,24 @@ class HybridRAGCoTBaseline(InferenceLayer):
 
 # Factory functions for easy baseline creation
 
+
 def create_vanilla_baseline(base_llm: InferenceLayer) -> InferenceLayer:
     """Create vanilla LLM baseline (no enhancements)."""
     return VanillaLLMBaseline(base_llm)
 
 
-def create_cot_baseline(
-    base_llm: InferenceLayer,
-    num_steps: int = 3
-) -> InferenceLayer:
+def create_cot_baseline(base_llm: InferenceLayer, num_steps: int = 3) -> InferenceLayer:
     """Create Chain of Thought baseline."""
     return ChainOfThoughtBaseline(base_llm, num_steps)
 
 
-def create_rag_baseline(
-    base_llm: InferenceLayer,
-    top_k: int = 3
-) -> InferenceLayer:
+def create_rag_baseline(base_llm: InferenceLayer, top_k: int = 3) -> InferenceLayer:
     """Create RAG baseline."""
     return RAGBaseline(base_llm, top_k=top_k)
 
 
 def create_rag_cot_baseline(
-    base_llm: InferenceLayer,
-    top_k: int = 3,
-    num_steps: int = 3
+    base_llm: InferenceLayer, top_k: int = 3, num_steps: int = 3
 ) -> InferenceLayer:
     """Create hybrid RAG+CoT baseline (strongest baseline)."""
     return HybridRAGCoTBaseline(base_llm, top_k=top_k, num_steps=num_steps)
@@ -310,6 +289,7 @@ if __name__ == "__main__":
 
     # In a real scenario, you'd use actual LLM here
     from experiments.caf_algorithm import SimulatedInferenceLayer
+
     base_llm = SimulatedInferenceLayer()
 
     prompt = "Explain how increased CO2 leads to global warming."
@@ -329,7 +309,7 @@ if __name__ == "__main__":
         "climate": [
             "CO2 is a greenhouse gas",
             "Greenhouse gases trap heat in atmosphere",
-            "Increased heat leads to warming"
+            "Increased heat leads to warming",
         ]
     }
     print(rag.generate(prompt, domain="climate"))

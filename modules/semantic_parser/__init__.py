@@ -1,4 +1,5 @@
 """Module B: Semantic Parser (Middleware)"""
-from .parser import SemanticParser, EntityLinker, ParsedResult
 
-__all__ = ['SemanticParser', 'EntityLinker', 'ParsedResult']
+from .parser import EntityLinker, ParsedResult, SemanticParser
+
+__all__ = ["SemanticParser", "EntityLinker", "ParsedResult"]

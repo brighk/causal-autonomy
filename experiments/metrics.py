@@ -13,19 +13,20 @@ Additionally computes:
 - Statistical significance measures
 """
 
-import numpy as np
-from dataclasses import dataclass, field
-from typing import Any
 from collections import defaultdict
-import json
+from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any
 
-from .synthetic_dataset import CausalChain, PromptPerturbation, PerturbationType
-from .caf_algorithm import CAFOutput, VerificationStatus, AdjudicationDecision
+import numpy as np
+
+from .caf_algorithm import AdjudicationDecision, CAFOutput, VerificationStatus
+from .synthetic_dataset import CausalChain, PerturbationType
 
 
 class MetricType(Enum):
     """Types of evaluation metrics."""
+
     INFERENCE_DEPTH = "inference_depth"
     CONTRADICTION_RATE = "contradiction_rate"
     ENTAILMENT_ACCURACY = "entailment_accuracy"
@@ -35,6 +36,7 @@ class MetricType(Enum):
 @dataclass
 class InferenceDepthResult:
     """Result for inference depth metric."""
+
     chain_id: str
     max_depth_achieved: int
     contradiction_at_depth: int | None
@@ -45,6 +47,7 @@ class InferenceDepthResult:
 @dataclass
 class ContradictionResult:
     """Result for contradiction detection."""
+
     chain_id: str
     contradiction_detected: bool
     contradiction_type: str | None
@@ -55,6 +58,7 @@ class ContradictionResult:
 @dataclass
 class EntailmentResult:
     """Result for entailment accuracy."""
+
     chain_id: str
     total_entailments: int
     correct_entailments: int
@@ -65,6 +69,7 @@ class EntailmentResult:
 @dataclass
 class SemanticInvarianceResult:
     """Result for semantic invariance across perturbations."""
+
     chain_id: str
     original_output: str
     perturbation_outputs: dict[str, str]
@@ -81,6 +86,7 @@ class ExperimentMetrics:
     Contains all three primary metrics from Table 1 plus
     additional diagnostic metrics.
     """
+
     # Primary metrics (Table 1)
     mean_inference_depth: float
     std_inference_depth: float
@@ -157,9 +163,7 @@ class MetricsCalculator:
         self.similarity_threshold = similarity_threshold
 
     def compute_inference_depth(
-        self,
-        chain: CausalChain,
-        caf_output: CAFOutput
+        self, chain: CausalChain, caf_output: CAFOutput
     ) -> InferenceDepthResult:
         """
         Compute inference depth for a single chain.
@@ -190,23 +194,26 @@ class MetricsCalculator:
                     break
 
         # If no contradiction and accepted, achieved full depth
-        if caf_output.decision == AdjudicationDecision.ACCEPT and contradiction_depth is None:
+        if (
+            caf_output.decision == AdjudicationDecision.ACCEPT
+            and contradiction_depth is None
+        ):
             max_depth_achieved = ground_truth_depth
 
-        depth_ratio = max_depth_achieved / ground_truth_depth if ground_truth_depth > 0 else 0
+        depth_ratio = (
+            max_depth_achieved / ground_truth_depth if ground_truth_depth > 0 else 0
+        )
 
         return InferenceDepthResult(
             chain_id=chain.chain_id,
             max_depth_achieved=max_depth_achieved,
             contradiction_at_depth=contradiction_depth,
             ground_truth_depth=ground_truth_depth,
-            depth_ratio=depth_ratio
+            depth_ratio=depth_ratio,
         )
 
     def compute_contradiction_rate(
-        self,
-        chain: CausalChain,
-        caf_output: CAFOutput
+        self, chain: CausalChain, caf_output: CAFOutput
     ) -> ContradictionResult:
         """
         Compute contradiction detection for a single chain.
@@ -246,13 +253,11 @@ class MetricsCalculator:
             contradiction_detected=detected,
             contradiction_type=contradiction_type,
             false_positive=false_positive,
-            false_negative=false_negative
+            false_negative=false_negative,
         )
 
     def compute_entailment_accuracy(
-        self,
-        chain: CausalChain,
-        caf_output: CAFOutput
+        self, chain: CausalChain, caf_output: CAFOutput
     ) -> EntailmentResult:
         """
         Compute entailment accuracy for a single chain.
@@ -275,26 +280,31 @@ class MetricsCalculator:
                 total_entailments=0,
                 correct_entailments=0,
                 accuracy=1.0,
-                kb_grounded=True
+                kb_grounded=True,
             )
 
         # Count verified entailments from CAF output
         correct = 0
         for log in caf_output.iteration_logs:
             for result in log.verification_results:
-                if result.status in [VerificationStatus.VERIFIED, VerificationStatus.PARTIAL]:
+                if result.status in [
+                    VerificationStatus.VERIFIED,
+                    VerificationStatus.PARTIAL,
+                ]:
                     correct += 1
 
         # Normalize by total expected
         # Use final iteration results as the measure
-        final_results = caf_output.iteration_logs[-1].verification_results if caf_output.iteration_logs else []
+        final_results = (
+            caf_output.iteration_logs[-1].verification_results
+            if caf_output.iteration_logs
+            else []
+        )
         verified_count = sum(
-            1 for r in final_results
-            if r.status == VerificationStatus.VERIFIED
+            1 for r in final_results if r.status == VerificationStatus.VERIFIED
         )
         partial_count = sum(
-            1 for r in final_results
-            if r.status == VerificationStatus.PARTIAL
+            1 for r in final_results if r.status == VerificationStatus.PARTIAL
         )
 
         total_checked = len(final_results) if final_results else 1
@@ -307,14 +317,14 @@ class MetricsCalculator:
             total_entailments=total_entailments,
             correct_entailments=verified_count,
             accuracy=accuracy,
-            kb_grounded=kb_grounded
+            kb_grounded=kb_grounded,
         )
 
     def compute_semantic_invariance(
         self,
         chain: CausalChain,
         original_output: CAFOutput,
-        perturbation_outputs: dict[PerturbationType, CAFOutput]
+        perturbation_outputs: dict[PerturbationType, CAFOutput],
     ) -> SemanticInvarianceResult:
         """
         Compute semantic invariance across prompt perturbations.
@@ -352,14 +362,14 @@ class MetricsCalculator:
             perturbation_outputs=perturbation_output_texts,
             consistency_scores=consistency_scores,
             mean_consistency=float(mean_consistency),
-            variance=float(variance)
+            variance=float(variance),
         )
 
     def compute_all_metrics(
         self,
         chains: list[CausalChain],
         caf_outputs: list[CAFOutput],
-        perturbation_outputs: list[dict[PerturbationType, CAFOutput]] | None = None
+        perturbation_outputs: list[dict[PerturbationType, CAFOutput]] | None = None,
     ) -> ExperimentMetrics:
         """
         Compute all metrics for a complete experiment.
@@ -378,9 +388,9 @@ class MetricsCalculator:
         invariance_results = []
 
         # Per-domain aggregation
-        domain_metrics = defaultdict(lambda: {
-            "depths": [], "contradictions": [], "accuracies": []
-        })
+        domain_metrics = defaultdict(
+            lambda: {"depths": [], "contradictions": [], "accuracies": []}
+        )
 
         for i, (chain, output) in enumerate(zip(chains, caf_outputs)):
             # Compute individual metrics
@@ -393,11 +403,15 @@ class MetricsCalculator:
             entailment_results.append(entailment_result)
 
             # Aggregate by domain
-            domain_metrics[chain.domain]["depths"].append(depth_result.max_depth_achieved)
+            domain_metrics[chain.domain]["depths"].append(
+                depth_result.max_depth_achieved
+            )
             domain_metrics[chain.domain]["contradictions"].append(
                 1 if contradiction_result.contradiction_detected else 0
             )
-            domain_metrics[chain.domain]["accuracies"].append(entailment_result.accuracy)
+            domain_metrics[chain.domain]["accuracies"].append(
+                entailment_result.accuracy
+            )
 
             # Compute semantic invariance if perturbation outputs provided
             if perturbation_outputs and i < len(perturbation_outputs):
@@ -411,7 +425,9 @@ class MetricsCalculator:
         mean_depth = float(np.mean(depths))
         std_depth = float(np.std(depths))
 
-        contradiction_count = sum(1 for r in contradiction_results if r.contradiction_detected)
+        contradiction_count = sum(
+            1 for r in contradiction_results if r.contradiction_detected
+        )
         contradiction_rate = (contradiction_count / len(contradiction_results)) * 100
 
         accuracies = [r.accuracy for r in entailment_results]
@@ -467,8 +483,7 @@ class MetricsCalculator:
 
 
 def compute_baseline_comparison(
-    caf_metrics: ExperimentMetrics,
-    baseline_metrics: ExperimentMetrics
+    caf_metrics: ExperimentMetrics, baseline_metrics: ExperimentMetrics
 ) -> dict[str, Any]:
     """
     Compute comparison between CAF and baseline metrics.
@@ -480,9 +495,10 @@ def compute_baseline_comparison(
     Returns:
         Dictionary with improvement percentages and deltas
     """
+
     def pct_improvement(caf_val, baseline_val):
         if baseline_val == 0:
-            return float('inf') if caf_val > 0 else 0.0
+            return float("inf") if caf_val > 0 else 0.0
         return ((caf_val - baseline_val) / baseline_val) * 100
 
     comparison = {
@@ -490,37 +506,39 @@ def compute_baseline_comparison(
             "caf": caf_metrics.mean_inference_depth,
             "baseline": baseline_metrics.mean_inference_depth,
             "improvement_pct": pct_improvement(
-                caf_metrics.mean_inference_depth,
-                baseline_metrics.mean_inference_depth
+                caf_metrics.mean_inference_depth, baseline_metrics.mean_inference_depth
             ),
-            "delta": caf_metrics.mean_inference_depth - baseline_metrics.mean_inference_depth,
+            "delta": caf_metrics.mean_inference_depth
+            - baseline_metrics.mean_inference_depth,
         },
         "contradiction_rate": {
             "caf": caf_metrics.contradiction_rate_percent,
             "baseline": baseline_metrics.contradiction_rate_percent,
             "reduction_pct": pct_improvement(
                 baseline_metrics.contradiction_rate_percent,
-                caf_metrics.contradiction_rate_percent
+                caf_metrics.contradiction_rate_percent,
             ),
-            "delta": baseline_metrics.contradiction_rate_percent - caf_metrics.contradiction_rate_percent,
+            "delta": baseline_metrics.contradiction_rate_percent
+            - caf_metrics.contradiction_rate_percent,
         },
         "entailment_accuracy": {
             "caf": caf_metrics.entailment_accuracy,
             "baseline": baseline_metrics.entailment_accuracy,
             "improvement_pct": pct_improvement(
-                caf_metrics.entailment_accuracy,
-                baseline_metrics.entailment_accuracy
+                caf_metrics.entailment_accuracy, baseline_metrics.entailment_accuracy
             ),
-            "delta": caf_metrics.entailment_accuracy - baseline_metrics.entailment_accuracy,
+            "delta": caf_metrics.entailment_accuracy
+            - baseline_metrics.entailment_accuracy,
         },
         "semantic_invariance": {
             "caf": caf_metrics.semantic_invariance_mean,
             "baseline": baseline_metrics.semantic_invariance_mean,
             "improvement_pct": pct_improvement(
                 caf_metrics.semantic_invariance_mean,
-                baseline_metrics.semantic_invariance_mean
+                baseline_metrics.semantic_invariance_mean,
             ),
-            "delta": caf_metrics.semantic_invariance_mean - baseline_metrics.semantic_invariance_mean,
+            "delta": caf_metrics.semantic_invariance_mean
+            - baseline_metrics.semantic_invariance_mean,
         },
     }
 
@@ -528,8 +546,7 @@ def compute_baseline_comparison(
 
 
 def generate_latex_results_table(
-    caf_metrics: ExperimentMetrics,
-    baseline_metrics: ExperimentMetrics
+    caf_metrics: ExperimentMetrics, baseline_metrics: ExperimentMetrics
 ) -> str:
     """
     Generate LaTeX table for paper results section.
@@ -557,7 +574,9 @@ def generate_latex_results_table(
     latex += f"{caf_metrics.mean_inference_depth:.2f} & "
     latex += f"+{comparison['inference_depth']['improvement_pct']:.1f}\\% \\\\\n"
 
-    latex += f"Contradiction Rate & {baseline_metrics.contradiction_rate_percent:.1f}\\% & "
+    latex += (
+        f"Contradiction Rate & {baseline_metrics.contradiction_rate_percent:.1f}\\% & "
+    )
     latex += f"{caf_metrics.contradiction_rate_percent:.1f}\\% & "
     latex += f"-{comparison['contradiction_rate']['delta']:.1f}pp \\\\\n"
 
@@ -580,8 +599,8 @@ def generate_latex_results_table(
 
 if __name__ == "__main__":
     # Demo: Generate sample metrics
-    from .synthetic_dataset import SyntheticDatasetGenerator
     from .caf_algorithm import CAFLoop
+    from .synthetic_dataset import SyntheticDatasetGenerator
 
     print("Metrics Calculator Demo")
     print("=" * 50)
@@ -598,8 +617,12 @@ if __name__ == "__main__":
     calculator = MetricsCalculator()
     metrics = calculator.compute_all_metrics(dataset, outputs)
 
-    print(f"\nResults:")
-    print(f"  Mean Inference Depth: {metrics.mean_inference_depth:.2f} ± {metrics.std_inference_depth:.2f}")
+    print("\nResults:")
+    print(
+        f"  Mean Inference Depth: {metrics.mean_inference_depth:.2f} ± {metrics.std_inference_depth:.2f}"
+    )
     print(f"  Contradiction Rate: {metrics.contradiction_rate_percent:.1f}%")
     print(f"  Entailment Accuracy: {metrics.entailment_accuracy:.4f}")
-    print(f"  95% CI: [{metrics.confidence_interval_95[0]:.4f}, {metrics.confidence_interval_95[1]:.4f}]")
+    print(
+        f"  95% CI: [{metrics.confidence_interval_95[0]:.4f}, {metrics.confidence_interval_95[1]:.4f}]"
+    )

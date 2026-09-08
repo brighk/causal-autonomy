@@ -228,7 +228,7 @@ class CounterBenchEvaluator:
                 iterations=0,
                 correct=False,
                 reasoning_type=reasoning_type,
-                response_text=f"Error: {str(e)}",
+                response_text=f"Error: {e!s}",
             )
 
         self.results.append(result)
@@ -380,11 +380,11 @@ class CounterBenchEvaluator:
 
             f.write("PERFORMANCE BY REASONING TYPE\n")
             f.write("-" * 70 + "\n")
-            for rtype, stats in sorted(metrics["by_type"].items()):
-                f.write(
-                    f"{rtype:15} | {stats['correct']:3}/{stats['total']:3} | "
-                    f"Accuracy: {stats['accuracy']:.2%}\n"
-                )
+            f.writelines(
+                f"{rtype:15} | {stats['correct']:3}/{stats['total']:3} | "
+                f"Accuracy: {stats['accuracy']:.2%}\n"
+                for rtype, stats in sorted(metrics["by_type"].items())
+            )
 
             f.write("\n")
             f.write("ANSWER DISTRIBUTION\n")

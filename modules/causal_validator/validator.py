@@ -6,7 +6,7 @@ Mechanism: Axiomatic Verification
 Validates causal assertions using formal causal reasoning.
 Checks for logical consistency and causal soundness.
 """
-from typing import Any
+
 import networkx as nx
 from loguru import logger
 
@@ -31,7 +31,7 @@ class CausalGraph:
         try:
             cycles = list(nx.simple_cycles(self.graph))
             return len(cycles) > 0
-        except:
+        except Exception:
             return False
 
     def get_violations(self) -> list[str]:
@@ -77,10 +77,8 @@ class CausalValidator:
         logger.info("Causal Validator initialized")
 
     async def validate(
-        self,
-        assertions: list[CausalAssertion],
-        verified_triplets: list[Triplet]
-    ) -> 'ValidationResult':
+        self, assertions: list[CausalAssertion], verified_triplets: list[Triplet]
+    ) -> "ValidationResult":
         """
         Validate causal assertions for logical consistency.
 
@@ -108,8 +106,7 @@ class CausalValidator:
         # Validate each assertion
         for assertion in assertions:
             assertion_violations = await self._validate_assertion(
-                assertion,
-                verified_triplets
+                assertion, verified_triplets
             )
             violations.extend(assertion_violations)
 
@@ -119,7 +116,7 @@ class CausalValidator:
             is_valid=is_valid,
             violations=violations,
             causal_graph_nodes=list(self.causal_graph.graph.nodes()),
-            causal_graph_edges=list(self.causal_graph.graph.edges())
+            causal_graph_edges=list(self.causal_graph.graph.edges()),
         )
 
     def _build_graph_from_triplets(self, triplets: list[Triplet]):
@@ -130,28 +127,26 @@ class CausalValidator:
                 self.causal_graph.add_causal_edge(
                     triplet.subject,
                     triplet.object_,
-                    metadata={'predicate': triplet.predicate}
+                    metadata={"predicate": triplet.predicate},
                 )
 
     def _is_causal_predicate(self, predicate: str) -> bool:
         """Check if a predicate represents a causal relationship"""
         causal_keywords = [
-            'causes',
-            'causedBy',
-            'resultIn',
-            'leadTo',
-            'produce',
-            'trigger',
-            'influence'
+            "causes",
+            "causedBy",
+            "resultIn",
+            "leadTo",
+            "produce",
+            "trigger",
+            "influence",
         ]
 
         predicate_lower = predicate.lower()
         return any(keyword.lower() in predicate_lower for keyword in causal_keywords)
 
     async def _validate_assertion(
-        self,
-        assertion: CausalAssertion,
-        verified_triplets: list[Triplet]
+        self, assertion: CausalAssertion, verified_triplets: list[Triplet]
     ) -> list[str]:
         """Validate a single causal assertion"""
         violations = []
@@ -174,9 +169,7 @@ class CausalValidator:
         return violations
 
     def _find_contradiction(
-        self,
-        triplet: Triplet,
-        verified_triplets: list[Triplet]
+        self, triplet: Triplet, verified_triplets: list[Triplet]
     ) -> str | None:
         """
         Find if a triplet contradicts verified knowledge.
@@ -185,10 +178,11 @@ class CausalValidator:
         - Same subject and predicate but different object
         """
         for verified in verified_triplets:
-            if (triplet.subject == verified.subject and
-                triplet.predicate == verified.predicate and
-                triplet.object_ != verified.object_):
-
+            if (
+                triplet.subject == verified.subject
+                and triplet.predicate == verified.predicate
+                and triplet.object_ != verified.object_
+            ):
                 return (
                     f"({triplet.subject}, {triplet.predicate}, {triplet.object_}) "
                     f"contradicts verified "
@@ -214,7 +208,7 @@ class ValidationResult:
         is_valid: bool,
         violations: list[str],
         causal_graph_nodes: list[str],
-        causal_graph_edges: list[tuple]
+        causal_graph_edges: list[tuple],
     ):
         self.is_valid = is_valid
         self.violations = violations

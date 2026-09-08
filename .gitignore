@@ -6,6 +6,7 @@ venv/
 *.egg-info/
 .env
 .pytest_cache/
+.ruff_cache/
 .DS_Store
 
 # model/checkpoint artifacts — never commit these

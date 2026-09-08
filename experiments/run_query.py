@@ -22,27 +22,44 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from experiments.caf_algorithm import CAFLoop, CAFConfig
+from experiments.caf_algorithm import CAFConfig, CAFLoop
 
 
 def main():
     parser = argparse.ArgumentParser(description="Run CAF on a single ad-hoc prompt")
     parser.add_argument("--prompt", required=True, help="Question to ask CAF")
-    parser.add_argument("--simulate", action="store_true",
-                         help="Use SimulatedInferenceLayer/SimulatedFVL - no LLM or Fuseki needed")
+    parser.add_argument(
+        "--simulate",
+        action="store_true",
+        help="Use SimulatedInferenceLayer/SimulatedFVL - no LLM or Fuseki needed",
+    )
 
-    parser.add_argument("--llm-model", default="Qwen/Qwen3-14B",
-                         help="HF model id, alias, or 'ollama:<tag>' (see common.llm_integration)")
-    parser.add_argument("--llm-4bit", action="store_true", default=True,
-                         help="4-bit quantization (default on - needed for 14B on 24GB VRAM)")
+    parser.add_argument(
+        "--llm-model",
+        default="Qwen/Qwen3-14B",
+        help="HF model id, alias, or 'ollama:<tag>' (see common.llm_integration)",
+    )
+    parser.add_argument(
+        "--llm-4bit",
+        action="store_true",
+        default=True,
+        help="4-bit quantization (default on - needed for 14B on 24GB VRAM)",
+    )
     parser.add_argument("--llm-no-4bit", action="store_false", dest="llm_4bit")
 
-    parser.add_argument("--sparql-endpoint", default="http://localhost:3030/dataset/query",
-                         help="Must match the dataset name in config/fuseki/assembler.ttl "
-                              "(that file provisions a dataset literally named 'dataset')")
-    parser.add_argument("--use-intervention", action="store_true", default=True,
-                         help="Use KnowledgeBaseFVLWithIntervention (do-calculus for counterfactuals, "
-                              "falls back to plain SPARQL for factual questions)")
+    parser.add_argument(
+        "--sparql-endpoint",
+        default="http://localhost:3030/dataset/query",
+        help="Must match the dataset name in config/fuseki/assembler.ttl "
+        "(that file provisions a dataset literally named 'dataset')",
+    )
+    parser.add_argument(
+        "--use-intervention",
+        action="store_true",
+        default=True,
+        help="Use KnowledgeBaseFVLWithIntervention (do-calculus for counterfactuals, "
+        "falls back to plain SPARQL for factual questions)",
+    )
 
     parser.add_argument("--max-iterations", type=int, default=3)
     parser.add_argument("--verification-threshold", type=float, default=0.8)
@@ -56,6 +73,7 @@ def main():
     else:
         print(f"=== Loading LLM: {args.llm_model} (4bit={args.llm_4bit}) ===")
         from common.llm_integration import create_causal_lm_layer
+
         inference_layer = create_causal_lm_layer(
             model_size=args.llm_model,
             use_4bit=args.llm_4bit,
@@ -64,10 +82,16 @@ def main():
 
         print(f"=== Connecting to Fuseki: {args.sparql_endpoint} ===")
         if args.use_intervention:
-            from experiments.kb_fvl_with_intervention import KnowledgeBaseFVLWithIntervention
-            verification_layer = KnowledgeBaseFVLWithIntervention(sparql_endpoint=args.sparql_endpoint)
+            from experiments.kb_fvl_with_intervention import (
+                KnowledgeBaseFVLWithIntervention,
+            )
+
+            verification_layer = KnowledgeBaseFVLWithIntervention(
+                sparql_endpoint=args.sparql_endpoint
+            )
         else:
             from experiments.knowledge_base_fvl import KnowledgeBaseFVL
+
             verification_layer = KnowledgeBaseFVL(sparql_endpoint=args.sparql_endpoint)
 
     caf_loop = CAFLoop(

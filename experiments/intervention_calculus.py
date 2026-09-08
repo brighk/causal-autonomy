@@ -12,14 +12,15 @@ This enables proper counterfactual queries like:
 "Would Y occur if we intervene and set X=false?"
 """
 
+import re
 from dataclasses import dataclass
 from typing import TypedDict
-import re
 
 
 @dataclass
 class CausalEdge:
     """A directed edge in a causal graph."""
+
     cause: str
     effect: str
 
@@ -82,7 +83,7 @@ class CausalGraph:
 
         return descendants
 
-    def intervene(self, node: str, value: bool) -> 'CausalGraph':
+    def intervene(self, node: str, value: bool) -> "CausalGraph":
         """
         Perform intervention: do(node=value).
 
@@ -109,7 +110,9 @@ class CausalGraph:
 
         return intervened_graph
 
-    def would_occur(self, target: str, intervention_node: str, intervention_value: bool) -> bool:
+    def would_occur(
+        self, target: str, intervention_node: str, intervention_value: bool
+    ) -> bool:
         """
         Counterfactual query: Would target occur if we do(intervention_node=intervention_value)?
 
@@ -166,7 +169,9 @@ class CausalGraph:
                 ancestors = intervened_graph.get_ancestors(target)
                 return len(ancestors) > 0
 
-    def to_sparql_patterns(self, namespace: str = "http://counterbench.org/") -> list[str]:
+    def to_sparql_patterns(
+        self, namespace: str = "http://counterbench.org/"
+    ) -> list[str]:
         """Convert graph to SPARQL triple patterns."""
         patterns = []
         for edge in self.edges:
@@ -197,7 +202,7 @@ def parse_causal_context(context: str) -> CausalGraph:
     graph = CausalGraph()
 
     # Pattern: "X causes Y"
-    pattern = r'(\w+)\s+causes?\s+(\w+)'
+    pattern = r"(\w+)\s+causes?\s+(\w+)"
     for match in re.finditer(pattern, context, re.IGNORECASE):
         cause, effect = match.groups()
         graph.add_edge(normalize_node_id(cause), normalize_node_id(effect))
@@ -234,28 +239,28 @@ def parse_counterfactual_query(query: str) -> CounterfactualQuery | None:
     # Entity groups are lazy multi-word matches (not just \w+) so real KB
     # labels like "habitat destruction" parse as a single entity instead
     # of just grabbing "habitat".
-    pattern1 = r'would\s+([\w\s]+?)\s+occur\s+if\s+not\s+([\w\s]+?)\s+instead\s+of\s+\2'
+    pattern1 = r"would\s+([\w\s]+?)\s+occur\s+if\s+not\s+([\w\s]+?)\s+instead\s+of\s+\2"
     match = re.search(pattern1, query_lower, re.IGNORECASE)
     if match:
         target, intervention_node = match.groups()
         return {
-            'target': normalize_node_id(target),
-            'intervention_node': normalize_node_id(intervention_node),
-            'intervention_value': False  # "not X" means setting X to False
+            "target": normalize_node_id(target),
+            "intervention_node": normalize_node_id(intervention_node),
+            "intervention_value": False,  # "not X" means setting X to False
         }
 
     # Pattern 2: "Would X happen if we prevent Y?"
     # The second group is unbounded on the right, so it's anchored to stop
     # at trailing punctuation/end-of-string rather than eating past the
     # entity name.
-    pattern2 = r'would\s+([\w\s]+?)\s+(?:happen|occur)\s+if\s+(?:we\s+)?prevent\s+([\w\s]+?)(?:[?.!]|\s*$)'
+    pattern2 = r"would\s+([\w\s]+?)\s+(?:happen|occur)\s+if\s+(?:we\s+)?prevent\s+([\w\s]+?)(?:[?.!]|\s*$)"
     match = re.search(pattern2, query_lower, re.IGNORECASE)
     if match:
         target, intervention_node = match.groups()
         return {
-            'target': normalize_node_id(target),
-            'intervention_node': normalize_node_id(intervention_node),
-            'intervention_value': False
+            "target": normalize_node_id(target),
+            "intervention_node": normalize_node_id(intervention_node),
+            "intervention_value": False,
         }
 
     return None
@@ -283,9 +288,9 @@ def counterfactual_reasoning_with_graph(query: str, graph: CausalGraph) -> bool 
         return None
 
     return graph.would_occur(
-        target=parsed_query['target'],
-        intervention_node=parsed_query['intervention_node'],
-        intervention_value=parsed_query['intervention_value']
+        target=parsed_query["target"],
+        intervention_node=parsed_query["intervention_node"],
+        intervention_value=parsed_query["intervention_value"],
     )
 
 
@@ -310,30 +315,34 @@ def main():
     context = "We know that Ziklo causes Blaf, Blaf causes Trune, Trune causes Vork, and Vork causes Lumbo."
     query = "Would Lumbo occur if not Ziklo instead of Ziklo?"
 
-    print("="*70)
+    print("=" * 70)
     print("Intervention Calculus Example")
-    print("="*70)
+    print("=" * 70)
     print(f"\nContext: {context}")
     print(f"Query: {query}")
     print()
 
     # Build graph
     graph = parse_causal_context(context)
-    print(f"Causal Graph:")
+    print("Causal Graph:")
     for edge in graph.edges:
         print(f"  {edge.cause} → {edge.effect}")
     print()
 
     # Parse query
     parsed = parse_counterfactual_query(query)
-    print(f"Parsed Query:")
+    print("Parsed Query:")
     print(f"  Target: {parsed['target']}")
-    print(f"  Intervention: do({parsed['intervention_node']}={parsed['intervention_value']})")
+    print(
+        f"  Intervention: do({parsed['intervention_node']}={parsed['intervention_value']})"
+    )
     print()
 
     # Perform intervention
-    intervened_graph = graph.intervene(parsed['intervention_node'], parsed['intervention_value'])
-    print(f"After Intervention (removing Ziklo):")
+    intervened_graph = graph.intervene(
+        parsed["intervention_node"], parsed["intervention_value"]
+    )
+    print("After Intervention (removing Ziklo):")
     print(f"  Edges: {len(intervened_graph.edges)}")
     for edge in intervened_graph.edges:
         print(f"    {edge.cause} → {edge.effect}")
@@ -354,5 +363,5 @@ def main():
     print(f"✓ Correct! Expected: no, Got: {'no' if not answer else 'yes'}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
