@@ -138,7 +138,6 @@ name = "caval"
 version = "0.1.1"
 source = { editable = "." }
 dependencies = [
-    { name = "en-core-web-sm" },
     { name = "fuzzywuzzy" },
     { name = "httpx" },
     { name = "loguru" },
@@ -173,6 +172,7 @@ llm = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "en-core-web-sm" },
     { name = "prek" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -183,7 +183,6 @@ dev = [
 requires-dist = [
     { name = "accelerate", marker = "extra == 'llm'", specifier = ">=0.25.0" },
     { name = "bitsandbytes", marker = "extra == 'llm'", specifier = ">=0.43.0" },
-    { name = "en-core-web-sm", url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" },
     { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.115.0" },
     { name = "fuzzywuzzy", specifier = ">=0.18.0" },
     { name = "httpx", specifier = ">=0.25.0" },
@@ -208,6 +207,7 @@ provides-extras = ["api", "llm", "experiments"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "en-core-web-sm", url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" },
     { name = "prek", specifier = ">=0.4.0" },
     { name = "pytest", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", specifier = ">=0.24.0" },

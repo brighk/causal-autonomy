@@ -1,4 +1,4 @@
-# Causal Reasoning (CAF)
+# Causal Reasoning Verification (CAVAL CAusal VALidation/Verification) (part from Causal Autonomy Framework)
 
 CAF (Causal Autonomy Framework) verifies an LLM's output against a knowledge base at request time, using an iterative generate → verify → constrain → regenerate loop. Each draft response is parsed into RDF triplets, then each triplet is checked against a SPARQL knowledge base, and if verification fails the failures are turned into constraints that are fed back into the next generation attempt.
 

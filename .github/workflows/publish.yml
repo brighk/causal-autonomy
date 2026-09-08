@@ -1,0 +1,33 @@
+name: Publish to PyPI
+
+# Triggered by publishing a GitHub Release (not just pushing a tag) - gives
+# a clear place to write release notes and matches how most Python
+# projects gate a real publish behind a deliberate action, not every tag
+# push.
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # Must match the GitHub environment name registered as this project's
+    # PyPI trusted publisher (pypi.org -> your project -> Publishing ->
+    # Add a new publisher). No API token/secret needed - PyPI verifies the
+    # short-lived OIDC token GitHub issues below against that registration
+    # (repo + workflow filename + environment name), not a stored secret.
+    environment: pypi
+    permissions:
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Build
+        run: uv build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

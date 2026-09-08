@@ -2,6 +2,19 @@
 name = "caval"
 version = "0.1.1"
 description = "Sovereign Agent with Deterministic Output via Causal Grounding"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Koycho Georgiev", email = "georgievkoycho@gmail.com" }]
+keywords = ["llm", "causal-reasoning", "knowledge-graph", "sparql", "rag", "verification", "grounding"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 requires-python = ">=3.11"
 # Core: everything `caval.Caval` itself needs (parsing, entity linking,
 # SPARQL verification, config) - talks to Fuseki and to an already-running
@@ -12,7 +25,6 @@ requires-python = ">=3.11"
 # simulating their absence - so a lean `pip install caval` genuinely works
 # without pulling in a multi-GB ML stack a caval-only consumer never needs.
 dependencies = [
-    "en-core-web-sm",
     "fuzzywuzzy>=0.18.0",
     "httpx>=0.25.0",
     "loguru>=0.7.0",
@@ -50,6 +62,11 @@ experiments = [
     "pandas>=2.0.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/brighk/causal_autonomy"
+Repository = "https://github.com/brighk/causal_autonomy"
+Issues = "https://github.com/brighk/causal_autonomy/issues"
+
 [tool.uv.sources]
 en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }
 
@@ -57,16 +74,35 @@ en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/dow
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.sdist]
+# Allowlist, not a denylist: hatchling's default sdist inclusion swept in
+# far more than intended when tested - an untracked PDF sitting in the
+# repo root, .claude/settings.local.json (local IDE config), .vscode/,
+# deployment/, config/, BACKLOG.md, none of which belong in a public
+# package download. Explicit include list means nothing new dropped into
+# the repo root can accidentally end up published, without needing to
+# remember to exclude it.
+include = [
+    "/caval",
+    "/api",
+    "/modules",
+    "/utils",
+    "/common",
+    "/experiments",
+    "/README.md",
+    "/LICENSE",
+]
+
 [tool.hatch.build.targets.wheel]
 # Flat repo layout: caval/ is the new public package; api/, modules/,
 # utils/, common/, experiments/ are its pre-existing internals, still
 # importable as top-level packages in their own right (api/main.py, the
 # .vscode/launch.json debug configs, etc. all do `import modules.x`/
 # `import api.main` directly, not through caval). experiments/ ships
-# unmodified because common/llm_integration.py imports
-# experiments.caf_algorithm.InferenceLayer as a base class - a real runtime
-# dependency of modules/inference_engine/engine.py, not just of the
-# experiments/ scripts themselves.
+# alongside the rest for anyone using this repo's non-caval entry points
+# (experiments/run_query.py etc.) - common/llm_integration.py no longer
+# depends on it (InferenceLayer moved to common/inference_layer.py), so
+# caval's own import chain doesn't require experiments/ to be present.
 packages = ["caval", "api", "modules", "utils", "common", "experiments"]
 
 [tool.ruff]
@@ -83,6 +119,19 @@ dev = [
     "ruff==0.16.6",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
+    # spaCy model, not a runtime dependency of published `caval` - PyPI has
+    # no package literally named en-core-web-sm (confirmed: 404 on PyPI's
+    # own index), and [tool.uv.sources] below is a uv-local resolution
+    # override that does NOT get embedded in the wheel's published
+    # Requires-Dist - a real `pip install caval` or `uv add caval` from
+    # another project would just fail trying to resolve it from PyPI.
+    # Kept here so `uv sync` on this repo still auto-installs it for local
+    # dev; anyone consuming the published package instead runs
+    # `python -m spacy download en_core_web_sm` once, same as spaCy's own
+    # documented pattern for downstream packages - SemanticParser.__init__
+    # already raises a clear RuntimeError with that exact command if the
+    # model isn't present, so this isn't a silent-failure risk.
+    "en-core-web-sm",
 ]
 
 [tool.pytest.ini_options]
