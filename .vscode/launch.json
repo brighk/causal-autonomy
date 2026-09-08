@@ -1,0 +1,65 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "CAF: single query (simulated, no deps)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "experiments.run_query",
+            "args": ["--simulate", "--prompt", "Does rain cause slippery roads?"],
+            "cwd": "${workspaceFolder}",
+            "justMyCode": true
+        },
+        {
+            "name": "CAF: single query (Qwen3-14B 4bit + Fuseki)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "experiments.run_query",
+            "args": [
+                "--prompt", "Does rain cause slippery roads?",
+                "--llm-model", "Qwen/Qwen3-14B",
+                "--llm-4bit",
+                "--sparql-endpoint", "http://localhost:3030/dataset/query"
+            ],
+            "cwd": "${workspaceFolder}",
+            "justMyCode": true,
+            "envFile": "${workspaceFolder}/.env"
+        },
+        {
+            "name": "API: FastAPI gateway (api.main, :8000)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "api.main",
+            "cwd": "${workspaceFolder}",
+            "justMyCode": true,
+            "envFile": "${workspaceFolder}/.env"
+        },
+        {
+            "name": "API: Inference Engine server (modules.inference_engine.server, :8001)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "modules.inference_engine.server",
+            "cwd": "${workspaceFolder}",
+            "justMyCode": true,
+            "envFile": "${workspaceFolder}/.env",
+            "presentation": {
+                "hidden": false
+            }
+        },
+        {
+            "name": "Experiment: run_experiment.py (--use-llm --use-real-sparql)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "experiments.run_experiment",
+            "args": [
+                "--num-chains", "5",
+                "--perturbations", "2",
+                "--use-llm", "--llm-model", "Qwen/Qwen3-14B", "--llm-4bit",
+                "--use-real-sparql", "--sparql-endpoint", "http://localhost:3030/dataset/query"
+            ],
+            "cwd": "${workspaceFolder}",
+            "justMyCode": true,
+            "envFile": "${workspaceFolder}/.env"
+        }
+    ]
+}
