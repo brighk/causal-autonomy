@@ -1,5 +1,8 @@
 # Causal Reasoning Verification (CAVAL CAusal VALidation/Verification) (part from Causal Autonomy Framework)
 
+[![CI](https://github.com/brighk/causal_autonomy/actions/workflows/ci.yml/badge.svg)](https://github.com/brighk/causal_autonomy/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/caval.svg)](https://pypi.org/project/caval/)
+
 CAF (Causal Autonomy Framework) verifies an LLM's output against a knowledge base at request time, using an iterative generate → verify → constrain → regenerate loop. Each draft response is parsed into RDF triplets, then each triplet is checked against a SPARQL knowledge base, and if verification fails the failures are turned into constraints that are fed back into the next generation attempt.
 
 ## Architecture
@@ -28,8 +31,19 @@ uv sync --extra experiments      # + the experiments/ benchmark harness
 uv sync --all-extras             # everything - what you want for full local dev on this repo
 ```
 
-`en_core_web_sm` (spaCy's model, needed for triplet parsing) installs
-automatically as part of the base `caval` dependencies via `[tool.uv.sources]`.
+`en_core_web_sm` (spaCy's model, needed for triplet parsing) isn't a real
+PyPI package, so it's not a published dependency of `caval` - a plain
+`pip install caval` can't resolve it. For local dev on *this* repo, `uv
+sync` still installs it automatically (it's in the `dev` dependency-group,
+mapped via `[tool.uv.sources]`). If you installed `caval` from PyPI
+instead, run this once:
+
+```bash
+python -m spacy download en_core_web_sm
+```
+
+`Caval()`/`SemanticParser()` raise a clear `RuntimeError` with this exact
+command if the model isn't found, rather than failing silently.
 
 
 ## Development checks
@@ -103,14 +117,20 @@ curl -X POST http://localhost:3030/dataset/update \
 
 ## Install as a library
 
-`caval` (`caval/`) wraps the `api/`+`modules/` pipeline as a plain importable
-class - no FastAPI service to run yourself, but the LLM still runs as its
-own background process (for GPU isolation) and Fuseki still runs via
-docker-compose. `pip install caval`/`uv add caval` pulls in only what
-`caval` itself needs (spaCy, SPARQLWrapper, httpx, pydantic) - no torch,
-no FastAPI, nothing GPU-related - since it talks to Fuseki and to the
-already-running inference engine below over plain HTTP, not in-process.
-Three things running, few lines of code:
+`caval` is [published on PyPI](https://pypi.org/project/caval/) and wraps
+the `api/`+`modules/` pipeline as a plain importable class - no FastAPI
+service to run yourself, but the LLM still runs as its own background
+process (for GPU isolation) and Fuseki still runs via docker-compose.
+`pip install caval`/`uv add caval` pulls in only what `caval` itself needs
+(spaCy, SPARQLWrapper, httpx, pydantic) - no torch, no FastAPI, nothing
+GPU-related - since it talks to Fuseki and to the already-running inference
+engine below over plain HTTP, not in-process. Three things running, few
+lines of code:
+
+```bash
+pip install caval   # or: uv add caval
+python -m spacy download en_core_web_sm   # one-time - see the note in Setup above
+```
 
 ```bash
 # 1. Fuseki
@@ -160,7 +180,7 @@ print(output.final_response, output.decision, output.final_score)
 
 `KnowledgeBaseFVLWithIntervention` (`experiments/kb_fvl_with_intervention.py`) is a strict superset of `KnowledgeBaseFVL`: for a factual question it verifies via SPARQL exactly like the plain class, but if the question looks counterfactual ("Would X occur if we prevented Y?") it instead builds a causal graph by walking causal-predicate edges outward from the mentioned entities in the same live KB, and answers via Pearl's do-calculus (`experiments/intervention_calculus.py`) - no extra setup required when driving it through `CAFLoop` this way. Plain `KnowledgeBaseFVL` is still there for callers that only ever ask factual questions.
 
-Or run the CounterBench benchmark harness:
+Or run the CounterBench benchmark harness (needs `uv sync --extra experiments --extra llm` - `experiments/` pulls in numpy/pandas/matplotlib, `--use-llm` pulls in torch/transformers via `common/llm_integration.py`):
 
 ```bash
 uv run python -m experiments.run_counterbench_experiment \
@@ -171,7 +191,7 @@ uv run python -m experiments.run_counterbench_experiment \
   --output results/caf_run
 ```
 
-Or as a live service (needs a separate inference-engine server running too):
+Or as a live service (needs `uv sync --extra api`, and a separate inference-engine server running too):
 
 ```bash
 uv run python -m api.main
