@@ -1,10 +1,10 @@
 version: '3.8'
 
-# Infra for framework1 (CAF). framework2 needs neither of these services —
-# it has no external KB dependency (see docs/SETUP.md).
+# Infra for CAF (the api/ + modules/ pipeline in this repo). Provides the
+# Apache Jena Fuseki triplestore used for SPARQL-backed truth verification.
 #
 # Usage:
-#   FUSEKI_ADMIN_PASSWORD=changeme docker compose -f framework1/deployment/docker-compose.yml up -d
+#   FUSEKI_ADMIN_PASSWORD=changeme docker compose -f deployment/docker-compose.yml up -d
 #
 # Note on the fuseki service: the mount paths below (/fuseki/databases,
 # /fuseki-base/configuration/assembler.ttl) are specific to the

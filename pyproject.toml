@@ -1,5 +1,5 @@
 [project]
-name = "causal-autonomy"
+name = "caval"
 version = "0.1.1"
 description = "Sovereign Agent with Deterministic Output via Causal Grounding"
 requires-python = ">=3.11"
@@ -33,3 +33,33 @@ dependencies = [
 
 [tool.uv.sources]
 en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# Flat repo layout: caval/ is the new public package; api/, modules/,
+# utils/, common/, experiments/ are its pre-existing internals, still
+# importable as top-level packages in their own right (api/main.py, the
+# .vscode/launch.json debug configs, etc. all do `import modules.x`/
+# `import api.main` directly, not through caval). experiments/ ships
+# unmodified because common/llm_integration.py imports
+# experiments.caf_algorithm.InferenceLayer as a base class - a real runtime
+# dependency of modules/inference_engine/engine.py, not just of the
+# experiments/ scripts themselves.
+packages = ["caval", "api", "modules", "utils", "common", "experiments"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+include = ["*.py", "*.pyi", "**/pyproject.toml"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[dependency-groups]
+dev = [
+    "prek>=0.4.0",
+    "ruff==0.16.6",
+]

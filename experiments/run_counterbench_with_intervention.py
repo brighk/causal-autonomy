@@ -19,22 +19,20 @@ Usage:
         --output results/caf_intervention
 """
 
+import argparse
+import json
 import re
 import sys
-import json
-import argparse
 from pathlib import Path
-from datetime import datetime
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from experiments.caf_algorithm import CAFLoop, CAFConfig
-from common.llm_integration import create_causal_lm_layer
+from experiments.caf_algorithm import CAFConfig, CAFLoop
 from experiments.kb_fvl_with_intervention import KnowledgeBaseFVLWithIntervention
 from experiments.run_counterbench_experiment import (
     CounterBenchEvaluator,
-    CounterBenchResult
+    CounterBenchResult,
 )
 
 
@@ -53,9 +51,7 @@ class InterventionCAFEvaluator(CounterBenchEvaluator):
         self.fvl = fvl
 
     def process_example(
-        self,
-        example: dict[str, Any],
-        verbose: bool = False
+        self, example: dict[str, Any], verbose: bool = False
     ) -> CounterBenchResult:
         """
         Process example with intervention calculus.
@@ -66,11 +62,11 @@ class InterventionCAFEvaluator(CounterBenchEvaluator):
         3. Run CAF loop (with intervention-aware verification)
         4. Extract answer
         """
-        query = example['query']
-        context = example.get('context', '')
-        expected_answer = example['expected_answer']
-        question_id = example.get('id', 'unknown')
-        reasoning_type = example.get('metadata', {}).get('type', 'basic')
+        query = example["query"]
+        context = example.get("context", "")
+        expected_answer = example["expected_answer"]
+        question_id = example.get("id", "unknown")
+        reasoning_type = example.get("metadata", {}).get("type", "basic")
         if context:
             full_query = (
                 f"{context}\n\n"
@@ -81,7 +77,7 @@ class InterventionCAFEvaluator(CounterBenchEvaluator):
             full_query = f"{query}\nAnswer with exactly one word: yes or no."
 
         if verbose:
-            print(f"\n{'='*70}")
+            print(f"\n{'=' * 70}")
             print(f"Processing: {question_id}")
             print(f"Query: {query}")
             print(f"Context: {context[:100]}...")
@@ -98,7 +94,7 @@ class InterventionCAFEvaluator(CounterBenchEvaluator):
 
             # Extract answer
             caf_answer = self.extract_answer(caf_result.final_response)
-            correct = (caf_answer == expected_answer)
+            correct = caf_answer == expected_answer
 
             if verbose and self.fvl:
                 print("\nIntervention Calculus Explanation:")
@@ -116,10 +112,12 @@ class InterventionCAFEvaluator(CounterBenchEvaluator):
                 reasoning_type=reasoning_type,
                 response_text=caf_result.final_response,
                 verification_details={
-                    'iteration_logs': [str(log) for log in caf_result.iteration_logs],
-                    'iteration_count': caf_result.iterations_used,
-                    'used_intervention': self.fvl._is_counterfactual_query() if self.fvl else False
-                }
+                    "iteration_logs": [str(log) for log in caf_result.iteration_logs],
+                    "iteration_count": caf_result.iterations_used,
+                    "used_intervention": self.fvl._is_counterfactual_query()
+                    if self.fvl
+                    else False,
+                },
             )
 
             if verbose:
@@ -134,13 +132,13 @@ class InterventionCAFEvaluator(CounterBenchEvaluator):
                 question_id=question_id,
                 query=query,
                 expected_answer=expected_answer,
-                caf_answer='unknown',
-                caf_decision='ERROR',
+                caf_answer="unknown",
+                caf_decision="ERROR",
                 caf_score=0.0,
                 iterations=0,
                 correct=False,
                 reasoning_type=reasoning_type,
-                response_text=f"Error: {str(e)}"
+                response_text=f"Error: {str(e)}",
             )
 
         self.results.append(result)
@@ -179,27 +177,33 @@ class InterventionCAFEvaluator(CounterBenchEvaluator):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='CAF with Intervention Calculus')
-    parser.add_argument('--input', required=True, help='Input JSON file')
-    parser.add_argument('--output', required=True, help='Output directory')
-    parser.add_argument('--limit', type=int, help='Limit number of examples')
+    parser = argparse.ArgumentParser(description="CAF with Intervention Calculus")
+    parser.add_argument("--input", required=True, help="Input JSON file")
+    parser.add_argument("--output", required=True, help="Output directory")
+    parser.add_argument("--limit", type=int, help="Limit number of examples")
 
     # LLM options
-    parser.add_argument('--use-llm', action='store_true', help='Use real LLM')
-    parser.add_argument('--llm-model', default='tiny', choices=['tiny', 'phi2', '7b'])
-    parser.add_argument('--llm-4bit', action='store_true', help='Use 4-bit quantization')
+    parser.add_argument("--use-llm", action="store_true", help="Use real LLM")
+    parser.add_argument("--llm-model", default="tiny", choices=["tiny", "phi2", "7b"])
+    parser.add_argument(
+        "--llm-4bit", action="store_true", help="Use 4-bit quantization"
+    )
 
     # Intervention calculus
-    parser.add_argument('--use-intervention', action='store_true', help='Use intervention calculus')
+    parser.add_argument(
+        "--use-intervention", action="store_true", help="Use intervention calculus"
+    )
 
     # SPARQL (for factual queries fallback)
-    parser.add_argument('--sparql-endpoint', default='http://localhost:3030/counterbench/query')
+    parser.add_argument(
+        "--sparql-endpoint", default="http://localhost:3030/dataset/query"
+    )
 
     args = parser.parse_args()
 
-    print("="*70)
+    print("=" * 70)
     print("CAF with Intervention Calculus - CounterBench Evaluation")
-    print("="*70)
+    print("=" * 70)
     print()
 
     # Load data
@@ -207,13 +211,14 @@ def main():
         data = json.load(f)
 
     if args.limit:
-        data = data[:args.limit]
+        data = data[: args.limit]
 
     print(f"✓ Loaded {len(data)} examples")
 
     # Create LLM
     if args.use_llm:
         from common.llm_integration import create_causal_lm_layer
+
         llm = create_causal_lm_layer(args.llm_model, use_4bit=args.llm_4bit)
         # Strict benchmark decoding: short, deterministic yes/no outputs.
         if hasattr(llm, "config"):
@@ -224,38 +229,38 @@ def main():
         print(f"✓ LLM loaded: {args.llm_model}")
     else:
         from experiments.caf_algorithm import SimulatedInferenceLayer
+
         llm = SimulatedInferenceLayer()
         print("✓ Using simulated LLM")
 
     # Create FVL with intervention calculus
     if args.use_intervention:
         fvl = KnowledgeBaseFVLWithIntervention(sparql_endpoint=args.sparql_endpoint)
-        print(f"✓ Intervention calculus enabled")
+        print("✓ Intervention calculus enabled")
     else:
         from experiments.caf_algorithm import SimulatedFVL
+
         fvl = SimulatedFVL()
         print("✓ Using simulated FVL")
 
     # Create CAF loop
     config = CAFConfig(max_iterations=3, verification_threshold=0.7)
-    caf_loop = CAFLoop(
-        config=config,
-        inference_layer=llm,
-        verification_layer=fvl
-    )
+    caf_loop = CAFLoop(config=config, inference_layer=llm, verification_layer=fvl)
 
     # Create evaluator
     evaluator = InterventionCAFEvaluator(
         caf_loop=caf_loop,
         use_llm=args.use_llm,
         use_sparql=args.use_intervention,
-        fvl=fvl if args.use_intervention else None
+        fvl=fvl if args.use_intervention else None,
     )
 
     # Evaluate
     print()
     print(f"Evaluating on {len(data)} examples...")
-    print(f"Configuration: LLM={'Real' if args.use_llm else 'Simulated'}, Intervention={'Yes' if args.use_intervention else 'No'}")
+    print(
+        f"Configuration: LLM={'Real' if args.use_llm else 'Simulated'}, Intervention={'Yes' if args.use_intervention else 'No'}"
+    )
     print()
 
     evaluator.evaluate(data, limit=args.limit, verbose=False)
@@ -268,16 +273,18 @@ def main():
     metrics = evaluator.compute_metrics()
 
     print()
-    print("="*70)
+    print("=" * 70)
     print("RESULTS")
-    print("="*70)
-    total_examples = metrics.get('total_examples', len(evaluator.results))
-    print(f"Accuracy: {metrics['accuracy']*100:.2f}% ({metrics['correct']}/{total_examples})")
+    print("=" * 70)
+    total_examples = metrics.get("total_examples", len(evaluator.results))
+    print(
+        f"Accuracy: {metrics['accuracy'] * 100:.2f}% ({metrics['correct']}/{total_examples})"
+    )
     print(f"Avg Iterations: {metrics['avg_iterations']:.1f}")
     print(f"Avg Score: {metrics['avg_score']:.2f}")
     print()
     print(f"✓ Results saved to {output_dir}/")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

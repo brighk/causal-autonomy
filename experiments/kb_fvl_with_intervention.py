@@ -12,19 +12,16 @@ This enables CAF to properly handle:
 """
 
 from typing import Any
-from experiments.knowledge_base_fvl import KnowledgeBaseFVL
+
+from experiments.caf_algorithm import RDFTriplet, VerificationResult, VerificationStatus
 from experiments.intervention_calculus import (
     CausalGraph,
-    parse_causal_context,
-    parse_counterfactual_query,
     counterfactual_reasoning_with_graph,
     normalize_node_id,
+    parse_causal_context,
+    parse_counterfactual_query,
 )
-from experiments.caf_algorithm import (
-    RDFTriplet,
-    VerificationResult,
-    VerificationStatus
-)
+from experiments.knowledge_base_fvl import KnowledgeBaseFVL
 
 # Predicate substrings treated as "causal" when traversing the live KB to
 # build a do-calculus graph. Kept in sync by hand with
@@ -32,7 +29,13 @@ from experiments.caf_algorithm import (
 # there's no shared constants module between api/ and experiments/ to pull
 # this from instead.
 CAUSAL_PREDICATE_KEYWORDS = (
-    "causes", "causedby", "resultin", "leadto", "produce", "trigger", "influence",
+    "causes",
+    "causedby",
+    "resultin",
+    "leadto",
+    "produce",
+    "trigger",
+    "influence",
 )
 
 
@@ -132,7 +135,7 @@ class KnowledgeBaseFVLWithIntervention(KnowledgeBaseFVL):
         self,
         triplets: list[RDFTriplet],
         knowledge_base: Any = None,
-        query: str | None = None
+        query: str | None = None,
     ) -> list[VerificationResult]:
         """
         Verify triplets using intervention calculus if counterfactual.
@@ -179,11 +182,7 @@ class KnowledgeBaseFVLWithIntervention(KnowledgeBaseFVL):
         # Counterfactual query → use intervention calculus
         return self._verify_with_intervention(triplets)
 
-    def _ensure_causal_graph(
-        self,
-        triplets: list[RDFTriplet],
-        query: str
-    ) -> None:
+    def _ensure_causal_graph(self, triplets: list[RDFTriplet], query: str) -> None:
         """
         Auto-build the causal graph from the live KB for a counterfactual
         query (auto mode only - see verify()). No-op if `query` doesn't
@@ -193,7 +192,7 @@ class KnowledgeBaseFVLWithIntervention(KnowledgeBaseFVL):
         if not parsed_query:
             return
 
-        seed_texts = [parsed_query['target'], parsed_query['intervention_node']]
+        seed_texts = [parsed_query["target"], parsed_query["intervention_node"]]
         seed_texts.extend(t.subject for t in triplets)
         seed_texts.extend(t.obj for t in triplets)
 
@@ -202,9 +201,7 @@ class KnowledgeBaseFVLWithIntervention(KnowledgeBaseFVL):
             self.causal_graph = graph
 
     def _build_causal_graph_from_kb(
-        self,
-        seed_texts: list[str],
-        max_hops: int | None = None
+        self, seed_texts: list[str], max_hops: int | None = None
     ) -> CausalGraph:
         """
         Build a do-calculus CausalGraph by walking causal-predicate edges
@@ -245,8 +242,12 @@ class KnowledgeBaseFVLWithIntervention(KnowledgeBaseFVL):
 
             for uri in frontier:
                 for neighbor_uri, cause_uri, effect_uri in self._causal_edges(uri):
-                    cause_label = normalize_node_id(self._resolve_label(cause_uri) or cause_uri)
-                    effect_label = normalize_node_id(self._resolve_label(effect_uri) or effect_uri)
+                    cause_label = normalize_node_id(
+                        self._resolve_label(cause_uri) or cause_uri
+                    )
+                    effect_label = normalize_node_id(
+                        self._resolve_label(effect_uri) or effect_uri
+                    )
                     graph.add_edge(cause_label, effect_label)
 
                     if neighbor_uri not in visited_uris:
@@ -292,8 +293,7 @@ class KnowledgeBaseFVLWithIntervention(KnowledgeBaseFVL):
         return edges
 
     def _verify_with_intervention(
-        self,
-        triplets: list[RDFTriplet]
+        self, triplets: list[RDFTriplet]
     ) -> list[VerificationResult]:
         """
         Verify using intervention calculus.
@@ -323,16 +323,22 @@ class KnowledgeBaseFVLWithIntervention(KnowledgeBaseFVL):
         # already-built graph object (avoids re-parsing causal_context text
         # through parse_causal_context's single-word regex, which would
         # mangle multi-word KB-derived labels).
-        expected_answer = counterfactual_reasoning_with_graph(self.current_query, self.causal_graph)
+        expected_answer = counterfactual_reasoning_with_graph(
+            self.current_query, self.causal_graph
+        )
         predicted_answer = self._extract_binary_answer(self.last_response or "")
 
         # Use one canonical claim for scoring to avoid noisy triplet over-penalization.
-        claim_triplet = triplets[0] if triplets else RDFTriplet(
-            subject=parsed_query['intervention_node'].lower(),
-            predicate="counterfactual_effect",
-            obj=parsed_query['target'].lower(),
-            confidence=1.0,
-            source_span=self.current_query
+        claim_triplet = (
+            triplets[0]
+            if triplets
+            else RDFTriplet(
+                subject=parsed_query["intervention_node"].lower(),
+                predicate="counterfactual_effect",
+                obj=parsed_query["target"].lower(),
+                confidence=1.0,
+                source_span=self.current_query,
+            )
         )
 
         if expected_answer is None or predicted_answer == "unknown":
@@ -349,7 +355,7 @@ class KnowledgeBaseFVLWithIntervention(KnowledgeBaseFVL):
                 score = 1.0
                 supporting_facts = [
                     f"Intervention calculus expects '{expected_label}'",
-                    f"Based on: do({parsed_query['intervention_node']}={parsed_query['intervention_value']})"
+                    f"Based on: do({parsed_query['intervention_node']}={parsed_query['intervention_value']})",
                 ]
                 contradicting_facts = []
             else:
@@ -359,7 +365,7 @@ class KnowledgeBaseFVLWithIntervention(KnowledgeBaseFVL):
                 supporting_facts = []
                 contradicting_facts = [
                     f"Intervention calculus expects '{expected_label}' but response implies '{predicted_answer}'",
-                    f"Based on: do({parsed_query['intervention_node']}={parsed_query['intervention_value']})"
+                    f"Based on: do({parsed_query['intervention_node']}={parsed_query['intervention_value']})",
                 ]
 
         result = VerificationResult(
@@ -369,7 +375,7 @@ class KnowledgeBaseFVLWithIntervention(KnowledgeBaseFVL):
             contradiction_found=(status == VerificationStatus.CONTRADICTION),
             supporting_facts=supporting_facts,
             contradicting_facts=contradicting_facts,
-            confidence_score=score
+            confidence_score=score,
         )
         results.append(result)
 
@@ -382,23 +388,23 @@ class KnowledgeBaseFVLWithIntervention(KnowledgeBaseFVL):
         """
         text = response.lower()
 
-        if 'cannot determine' in text or 'uncertain' in text:
-            return 'unknown'
-        if 'would not occur' in text or 'would not happen' in text:
-            return 'no'
-        if 'would occur' in text or 'would happen' in text:
-            return 'yes'
+        if "cannot determine" in text or "uncertain" in text:
+            return "unknown"
+        if "would not occur" in text or "would not happen" in text:
+            return "no"
+        if "would occur" in text or "would happen" in text:
+            return "yes"
 
-        yes_idx = text.find('yes')
-        no_idx = text.find('no')
+        yes_idx = text.find("yes")
+        no_idx = text.find("no")
 
         if yes_idx != -1 and no_idx == -1:
-            return 'yes'
+            return "yes"
         if no_idx != -1 and yes_idx == -1:
-            return 'no'
+            return "no"
         if yes_idx != -1 and no_idx != -1:
-            return 'yes' if yes_idx < no_idx else 'no'
-        return 'unknown'
+            return "yes" if yes_idx < no_idx else "no"
+        return "unknown"
 
     def get_explanation(self) -> str:
         """
@@ -414,23 +420,25 @@ class KnowledgeBaseFVLWithIntervention(KnowledgeBaseFVL):
         if not parsed:
             return "Not a counterfactual query"
 
-        answer = counterfactual_reasoning_with_graph(self.current_query, self.causal_graph)
+        answer = counterfactual_reasoning_with_graph(
+            self.current_query, self.causal_graph
+        )
 
         explanation = f"""
 Counterfactual Reasoning via Intervention Calculus:
 
 Query: {self.current_query}
-Intervention: do({parsed['intervention_node']}={parsed['intervention_value']})
-Target: {parsed['target']}
+Intervention: do({parsed["intervention_node"]}={parsed["intervention_value"]})
+Target: {parsed["target"]}
 
 Causal Graph:
 {self._format_graph()}
 
 Intervention Effect:
-- After do({parsed['intervention_node']}={parsed['intervention_value']}):
+- After do({parsed["intervention_node"]}={parsed["intervention_value"]}):
   {self._explain_intervention_effect(parsed)}
 
-Answer: {'Yes' if answer else 'No'}
+Answer: {"Yes" if answer else "No"}
 """
         return explanation
 
@@ -446,9 +454,9 @@ Answer: {'Yes' if answer else 'No'}
 
     def _explain_intervention_effect(self, parsed_query: dict) -> str:
         """Explain the effect of the intervention."""
-        intervention_node = parsed_query['intervention_node']
-        intervention_value = parsed_query['intervention_value']
-        target = parsed_query['target']
+        intervention_node = parsed_query["intervention_node"]
+        intervention_value = parsed_query["intervention_value"]
+        target = parsed_query["target"]
 
         if not intervention_value:
             # Preventing the intervention node
@@ -459,7 +467,9 @@ Answer: {'Yes' if answer else 'No'}
             elif target == intervention_node:
                 return f"{target} is the intervened node → won't occur"
             else:
-                return f"{target} is independent of {intervention_node} → may still occur"
+                return (
+                    f"{target} is independent of {intervention_node} → may still occur"
+                )
         else:
             # Forcing the intervention node
             descendants = self.causal_graph.get_descendants(intervention_node)
@@ -473,8 +483,7 @@ Answer: {'Yes' if answer else 'No'}
 
 
 def create_intervention_fvl(
-    sparql_endpoint: str = "http://localhost:3030/counterbench/query",
-    **kwargs
+    sparql_endpoint: str = "http://localhost:3030/dataset/query", **kwargs
 ) -> KnowledgeBaseFVLWithIntervention:
     """
     Factory function to create FVL with intervention calculus.
@@ -486,7 +495,4 @@ def create_intervention_fvl(
     Returns:
         Configured FVL with intervention support
     """
-    return KnowledgeBaseFVLWithIntervention(
-        sparql_endpoint=sparql_endpoint,
-        **kwargs
-    )
+    return KnowledgeBaseFVLWithIntervention(sparql_endpoint=sparql_endpoint, **kwargs)

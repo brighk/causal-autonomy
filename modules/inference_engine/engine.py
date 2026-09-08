@@ -4,16 +4,19 @@ Hardware: NVIDIA A100/H100 GPU
 Model: Llama-3-70B
 Framework: PyTorch + vLLM for high-throughput inference
 """
-from typing import Any
-import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
-from loguru import logger
+
 import asyncio
 from dataclasses import dataclass
+from typing import Any
+
+from loguru import logger
+
+from common.llm_integration import HuggingFaceCausalLMLayer, LLMConfig
 
 # Optional vLLM import
 try:
     from vllm import LLM, SamplingParams
+
     VLLM_AVAILABLE = True
 except ImportError:
     logger.warning("vLLM not available, will use Hugging Face transformers")
@@ -25,6 +28,7 @@ except ImportError:
 @dataclass
 class GenerationConfig:
     """Configuration for text generation"""
+
     max_tokens: int = 512
     temperature: float = 0.7
     top_p: float = 0.9
@@ -49,7 +53,9 @@ class InferenceEngine:
         model_name: str = "meta-llama/Llama-3-70b-chat-hf",
         tensor_parallel_size: int = 1,
         gpu_memory_utilization: float = 0.9,
-        use_vllm: bool = True
+        use_vllm: bool = True,
+        load_in_4bit: bool = False,
+        load_in_8bit: bool = False,
     ):
         self.model_name = model_name
         self.use_vllm = use_vllm and VLLM_AVAILABLE
@@ -59,8 +65,10 @@ class InferenceEngine:
         if self.use_vllm:
             self._init_vllm(tensor_parallel_size, gpu_memory_utilization)
         else:
-            logger.info("Using Hugging Face transformers (vLLM not available or disabled)")
-            self._init_huggingface()
+            logger.info(
+                "Using common.llm_integration.HuggingFaceCausalLMLayer (vLLM not available or disabled)"
+            )
+            self._init_huggingface(load_in_4bit, load_in_8bit)
 
         logger.info("Inference Engine initialized successfully")
 
@@ -72,55 +80,84 @@ class InferenceEngine:
             gpu_memory_utilization=gpu_memory_utilization,
             trust_remote_code=True,
             dtype="float16",
-            max_model_len=4096
+            max_model_len=4096,
         )
         self.tokenizer = self.llm.get_tokenizer()
         logger.info("vLLM engine initialized")
 
-    def _init_huggingface(self):
-        """Initialize Hugging Face transformers (fallback)"""
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        self.model = AutoModelForCausalLM.from_pretrained(
-            self.model_name,
-            torch_dtype=torch.float16,
-            device_map="auto",
-            trust_remote_code=True
+    def _init_huggingface(self, load_in_4bit: bool = False, load_in_8bit: bool = False):
+        """
+        Initialize via the shared HuggingFaceCausalLMLayer (fallback when
+        vLLM isn't available) instead of loading transformers directly.
+
+        Reusing it here - rather than the raw AutoModelForCausalLM/
+        AutoTokenizer loading this used to do - gets this "production"
+        entry point the same model-family-aware chat templating, Qwen3
+        <think>-block stripping, and 4-bit/8-bit quantization support that
+        experiments/ already relies on via common/llm_integration.py,
+        instead of a second, independently-drifting reimplementation of
+        all three.
+        """
+        self.hf_layer = HuggingFaceCausalLMLayer(
+            LLMConfig(
+                model_name=self.model_name,
+                device="cuda",
+                load_in_4bit=load_in_4bit,
+                load_in_8bit=load_in_8bit,
+                trust_remote_code=True,
+            )
         )
-        logger.info("Hugging Face model initialized")
+        logger.info("Hugging Face model initialized via HuggingFaceCausalLMLayer")
 
-    def _build_causal_prompt(self, user_prompt: str, constraints: list[str] | None = None) -> str:
+    def _causal_task_instructions(self) -> str:
         """
-        Construct a prompt that encourages the model to generate
-        verifiable causal assertions alongside the response.
+        Instructions that get the model to emit the ANSWER:/CAUSAL_ASSERTIONS:
+        structure _parse_response() below expects. Factored out so both
+        backends can share it: the vLLM path folds it into a system message
+        (see _build_causal_prompt), while the HF path folds it into the
+        user-turn text instead and leaves system-message/chat-template/
+        constraint-injection entirely to HuggingFaceCausalLMLayer.
         """
-        system_prompt = """You are a reasoning agent that generates responses grounded in factual knowledge.
+        return (
+            "Provide a clear, accurate answer, then state the causal "
+            "relationships or facts that support it as precise, verifiable "
+            "statements.\n\n"
+            "Format your response as:\n"
+            "ANSWER: [your response]\n"
+            "CAUSAL_ASSERTIONS:\n"
+            "- [assertion 1]\n"
+            "- [assertion 2]\n"
+            "..."
+        )
 
-        For each response:
-        1. Provide a clear, accurate answer
-        2. State the causal relationships or facts that support your answer
-        3. Use precise, verifiable statements
-
-        Format your response as:
-        ANSWER: [your response]
-        CAUSAL_ASSERTIONS:
-        - [assertion 1]
-        - [assertion 2]
-        ..."""
+    def _build_causal_prompt(
+        self, user_prompt: str, constraints: list[str] | None = None
+    ) -> str:
+        """
+        Construct a fully chat-templated prompt for the vLLM path only.
+        The HF path never calls this - HuggingFaceCausalLMLayer.generate()
+        builds its own system message, applies its own model-family-aware
+        chat template, and injects constraints itself.
+        """
+        system_prompt = (
+            "You are a reasoning agent that generates responses grounded in "
+            f"factual knowledge.\n\n{self._causal_task_instructions()}"
+        )
 
         if constraints:
             constraint_text = "\n".join(f"- {c}" for c in constraints)
-            system_prompt += f"\n\nIMPORTANT: Avoid these contradictions:\n{constraint_text}"
+            system_prompt += (
+                f"\n\nIMPORTANT: Avoid these contradictions:\n{constraint_text}"
+            )
 
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
+            {"role": "user", "content": user_prompt},
         ]
 
         # Format according to Llama-3 chat template
         formatted_prompt = self.tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True
+            messages, tokenize=False, add_generation_prompt=True
         )
 
         return formatted_prompt
@@ -129,7 +166,7 @@ class InferenceEngine:
         self,
         prompt: str,
         config: GenerationConfig | None = None,
-        constraints: list[str] | None = None
+        constraints: list[str] | None = None,
     ) -> dict[str, Any]:
         """
         Generate response with causal assertions.
@@ -143,27 +180,29 @@ class InferenceEngine:
         if config is None:
             config = GenerationConfig()
 
-        formatted_prompt = self._build_causal_prompt(prompt, constraints)
-
         if self.use_vllm:
+            formatted_prompt = self._build_causal_prompt(prompt, constraints)
             result = await self._generate_vllm(formatted_prompt, config)
         else:
-            result = await self._generate_huggingface(formatted_prompt, config)
+            # HuggingFaceCausalLMLayer builds its own system message, chat
+            # template, and constraint injection - only the task text
+            # (raw prompt + the ANSWER:/CAUSAL_ASSERTIONS: instructions)
+            # needs to be assembled here.
+            task_text = f"{prompt}\n\n{self._causal_task_instructions()}"
+            result = await self._generate_huggingface(task_text, config, constraints)
 
         # Parse response to extract answer and causal assertions
-        parsed = self._parse_response(result['text'])
+        parsed = self._parse_response(result["text"])
 
         return {
-            'text': parsed['answer'],
-            'causal_assertions_raw': parsed['assertions'],
-            'full_response': result['text'],
-            'metadata': result.get('metadata', {})
+            "text": parsed["answer"],
+            "causal_assertions_raw": parsed["assertions"],
+            "full_response": result["text"],
+            "metadata": result.get("metadata", {}),
         }
 
     async def _generate_vllm(
-        self,
-        prompt: str,
-        config: GenerationConfig
+        self, prompt: str, config: GenerationConfig
     ) -> dict[str, Any]:
         """Generate using vLLM engine"""
         sampling_params = SamplingParams(
@@ -173,61 +212,46 @@ class InferenceEngine:
             max_tokens=config.max_tokens,
             repetition_penalty=config.repetition_penalty,
             presence_penalty=config.presence_penalty,
-            frequency_penalty=config.frequency_penalty
+            frequency_penalty=config.frequency_penalty,
         )
 
         # Run in thread pool to avoid blocking
-        outputs = await asyncio.to_thread(
-            self.llm.generate, [prompt], sampling_params
-        )
+        outputs = await asyncio.to_thread(self.llm.generate, [prompt], sampling_params)
 
         output = outputs[0]
         generated_text = output.outputs[0].text
 
         return {
-            'text': generated_text,
-            'metadata': {
-                'finish_reason': output.outputs[0].finish_reason,
-                'tokens_generated': len(output.outputs[0].token_ids)
-            }
+            "text": generated_text,
+            "metadata": {
+                "finish_reason": output.outputs[0].finish_reason,
+                "tokens_generated": len(output.outputs[0].token_ids),
+            },
         }
 
     async def _generate_huggingface(
         self,
-        prompt: str,
-        config: GenerationConfig
+        task_text: str,
+        config: GenerationConfig,
+        constraints: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Generate using Hugging Face transformers"""
-        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
-
-        outputs = await asyncio.to_thread(
-            self.model.generate,
-            **inputs,
-            max_new_tokens=config.max_tokens,
-            temperature=config.temperature,
-            top_p=config.top_p,
-            top_k=config.top_k,
-            repetition_penalty=config.repetition_penalty,
-            do_sample=True
+        """Generate via the shared HuggingFaceCausalLMLayer (fallback path)"""
+        generated_text = await asyncio.to_thread(
+            self.hf_layer.generate,
+            task_text,
+            constraints,
+            config.max_tokens,
+            config.temperature,
+            config.top_p,
         )
 
-        generated_text = self.tokenizer.decode(
-            outputs[0][inputs['input_ids'].shape[1]:],
-            skip_special_tokens=True
-        )
-
-        return {
-            'text': generated_text,
-            'metadata': {
-                'tokens_generated': outputs.shape[1] - inputs['input_ids'].shape[1]
-            }
-        }
+        return {"text": generated_text, "metadata": {}}
 
     def _parse_response(self, response: str) -> dict[str, Any]:
         """
         Parse the structured response to extract answer and causal assertions.
         """
-        lines = response.strip().split('\n')
+        lines = response.strip().split("\n")
 
         answer = ""
         assertions = []
@@ -248,10 +272,7 @@ class InferenceEngine:
             elif current_section == "answer" and not line.startswith("CAUSAL"):
                 answer += " " + line
 
-        return {
-            'answer': answer.strip(),
-            'assertions': assertions
-        }
+        return {"answer": answer.strip(), "assertions": assertions}
 
     def is_healthy(self) -> bool:
         """Check if engine is operational"""
@@ -259,7 +280,7 @@ class InferenceEngine:
             if self.use_vllm:
                 return self.llm is not None
             else:
-                return self.model is not None and self.tokenizer is not None
+                return self.hf_layer is not None
         except Exception as e:
             logger.error(f"Health check failed: {e}")
             return False

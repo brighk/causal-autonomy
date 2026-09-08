@@ -5,12 +5,13 @@ Protocol: SPARQL 1.1 over HTTP
 
 Provides deterministic verification by grounding LLM outputs in RDF knowledge graphs.
 """
+
+import asyncio
 from typing import Any
-from SPARQLWrapper import SPARQLWrapper, JSON
-from rdflib import Graph, Namespace, URIRef, Literal
-from rdflib.namespace import RDF, RDFS
+
 import Levenshtein
 from loguru import logger
+from SPARQLWrapper import JSON, SPARQLWrapper
 
 from api.models import Triplet, VerificationResult
 
@@ -26,7 +27,7 @@ class TruthAnchor:
     def __init__(
         self,
         fuseki_endpoint: str = "http://localhost:3030/dataset/query",
-        similarity_threshold: float = 0.85
+        similarity_threshold: float = 0.85,
     ):
         self.endpoint = fuseki_endpoint
         self.similarity_threshold = similarity_threshold
@@ -38,9 +39,7 @@ class TruthAnchor:
         logger.info(f"Truth Anchor initialized with endpoint: {fuseki_endpoint}")
 
     async def verify(
-        self,
-        triplets: list[Triplet],
-        threshold: float = 0.8
+        self, triplets: list[Triplet], threshold: float = 0.8
     ) -> VerificationResult:
         """
         Verify triplets against the knowledge base.
@@ -64,7 +63,7 @@ class TruthAnchor:
                 is_valid=False,
                 matched_triplets=[],
                 contradictions=["No triplets extracted from assertion"],
-                verification_method="none"
+                verification_method="none",
             )
 
         matched_triplets = []
@@ -81,14 +80,12 @@ class TruthAnchor:
                 if results:
                     # Verify object matches
                     match_result = self._verify_object_match(
-                        triplet.object_,
-                        results,
-                        threshold
+                        triplet.object_, results, threshold
                     )
 
-                    if match_result['matched']:
+                    if match_result["matched"]:
                         matched_triplets.append(triplet)
-                        total_similarity += match_result['score']
+                        total_similarity += match_result["score"]
                     else:
                         contradictions.append(
                             f"Triplet ({triplet.subject}, {triplet.predicate}, "
@@ -108,14 +105,16 @@ class TruthAnchor:
 
         # Calculate overall validity
         is_valid = len(matched_triplets) > 0 and len(contradictions) == 0
-        avg_similarity = total_similarity / len(matched_triplets) if matched_triplets else 0.0
+        avg_similarity = (
+            total_similarity / len(matched_triplets) if matched_triplets else 0.0
+        )
 
         return VerificationResult(
             is_valid=is_valid,
             matched_triplets=matched_triplets,
             contradictions=contradictions,
             similarity_score=avg_similarity,
-            verification_method="sparql_fuzzy_match"
+            verification_method="sparql_fuzzy_match",
         )
 
     def _build_sparql_query(self, triplet: Triplet) -> str:
@@ -147,17 +146,27 @@ LIMIT 10
         Returns:
             List of result bindings
         """
-        self.sparql.setQuery(query)
-
         try:
-            # Run synchronously (can be wrapped in executor if needed)
-            response = self.sparql.query().convert()
+            # A fresh SPARQLWrapper per call, not self.sparql: setQuery()
+            # mutates wrapper state, and asyncio.to_thread frees the event
+            # loop while the HTTP call is in flight, so concurrent requests
+            # sharing one wrapper could race and execute each other's query.
+            def run_query() -> Any:
+                wrapper = SPARQLWrapper(self.endpoint)
+                wrapper.setReturnFormat(JSON)
+                wrapper.setQuery(query)
+                return wrapper.query().convert()
+
+            # SPARQLWrapper's query().convert() is a blocking HTTP call;
+            # run it off the event loop so concurrent requests don't
+            # serialize behind whatever Fuseki round-trip is in flight.
+            response = await asyncio.to_thread(run_query)
 
             results = []
-            for binding in response.get('results', {}).get('bindings', []):
+            for binding in response.get("results", {}).get("bindings", []):
                 result = {}
                 for var, value in binding.items():
-                    result[var] = value.get('value')
+                    result[var] = value.get("value")
                 results.append(result)
 
             return results
@@ -167,10 +176,7 @@ LIMIT 10
             raise
 
     def _verify_object_match(
-        self,
-        expected_object: str,
-        results: list[dict[str, Any]],
-        threshold: float
+        self, expected_object: str, results: list[dict[str, Any]], threshold: float
     ) -> dict[str, Any]:
         """
         Verify if the expected object matches any result using:
@@ -181,26 +187,21 @@ LIMIT 10
             Dict with 'matched' (bool), 'score' (float), 'expected' (str)
         """
         if not results:
-            return {'matched': False, 'score': 0.0, 'expected': None}
+            return {"matched": False, "score": 0.0, "expected": None}
 
         best_match_score = 0.0
         best_match_value = None
 
         for result in results:
-            result_value = result.get('o', '')
+            result_value = result.get("o", "")
 
             # Exact match
             if result_value == expected_object:
-                return {
-                    'matched': True,
-                    'score': 1.0,
-                    'expected': result_value
-                }
+                return {"matched": True, "score": 1.0, "expected": result_value}
 
             # Fuzzy match using Levenshtein ratio
             similarity = Levenshtein.ratio(
-                expected_object.lower(),
-                result_value.lower()
+                expected_object.lower(), result_value.lower()
             )
 
             if similarity > best_match_score:
@@ -211,9 +212,9 @@ LIMIT 10
         matched = best_match_score >= threshold
 
         return {
-            'matched': matched,
-            'score': best_match_score,
-            'expected': best_match_value
+            "matched": matched,
+            "score": best_match_score,
+            "expected": best_match_value,
         }
 
     async def load_rdf_data(self, rdf_file_path: str, format: str = "turtle"):

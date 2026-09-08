@@ -9,11 +9,37 @@ overlapping concepts that never fully converged).
 Priority: P0 = blocks running the thing, P1 = wrong/silently-broken
 behavior, P2 = architecture/duplication cleanup, P3 = minor.
 
+**Status (2026-09-08, second pass):** all P0s fixed and verified - see
+"FIXED" notes inline. `SemanticParser` + `TruthAnchor` smoke-tested end to
+end against a live Fuseki instance with real data (92 triples, a small
+k8s/microservices causal graph): correct claims verify, false claims are
+rejected, and 5 concurrent requests were confirmed not to cross-contaminate
+each other's SPARQL queries. Fuseki confirmed running and correctly
+configured; `docker-compose` plugin installed; `.env` created from
+`.env.example` with `LOAD_IN_4BIT=true` for the RTX 3090. One new P0 found
+and fixed during verification (see below, "0."). P1 items #4 fixed; #5, #6
+left as-is (architecture/behavior calls, see notes) for the next debugging
+pass rather than silently redesigned.
+
 ---
 
 ## P0 - blocks running it
 
-### 1. `modules/inference_engine/engine.py` has no quantization path
+### 0. `Settings` crashes on any `.env` that sets `FUSEKI_ADMIN_PASSWORD` - FIXED
+Not in the original read-through; found while import-smoke-testing `api/main.py`
+after the other P0 fixes below. `utils/config.py`'s `Settings` had no
+`fuseki_admin_password` field, and pydantic-settings defaults to
+`extra="forbid"`. Since `.env.example` (and the README's setup instructions,
+and `deployment/docker-compose.yml`) all set `FUSEKI_ADMIN_PASSWORD`, any
+`.env` built by following the README crashed `Settings()` - and therefore
+`api/main.py` and `modules/inference_engine/server.py` - with a
+`pydantic_core.ValidationError: extra_forbidden` before either could even
+start. Fixed by declaring `fuseki_admin_password: str | None` on `Settings`
+([utils/config.py](utils/config.py)) - it's consumed by docker-compose, not
+read by app code, but pydantic-settings validates the full `.env` against
+the model regardless of whether a field is used.
+
+### 1. `modules/inference_engine/engine.py` has no quantization path - FIXED
 `InferenceEngine._init_huggingface()` ([modules/inference_engine/engine.py:80-89](modules/inference_engine/engine.py#L80-L89))
 calls `AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=..., device_map="auto", trust_remote_code=True)`
 with no `BitsAndBytesConfig`. `bitsandbytes` is a project dependency but only
@@ -35,7 +61,15 @@ Have `InferenceEngine` delegate to `common/llm_integration.py`'s
 its own `_init_huggingface`/`_init_vllm`. This also fixes finding #7 (two
 divergent prompt formats) for free.
 
-### 2. Experiment script SPARQL endpoint defaults point at datasets that don't exist
+### 2. Experiment script SPARQL endpoint defaults point at datasets that don't exist - FIXED
+All five stray `conceptnet`/`counterbench` defaults below now default to
+`http://localhost:3030/dataset/query`, matching the assembler, README, and
+`utils/config.py`. Left `experiments/kb_fvl_with_intervention.py`'s
+class-docstring example at `:52` (`counterbench/query`) alone - it's
+explicitly illustrating the separate "manual mode" use case (a hypothetical
+second Fuseki dataset for CounterBench's fictional-text harness), not a
+functional default.
+
 `config/fuseki/assembler.ttl` ([config/fuseki/assembler.ttl:8-17](config/fuseki/assembler.ttl#L8-L17)) provisions exactly
 one Fuseki dataset, named `dataset` (`http://localhost:3030/dataset/query`).
 But:
@@ -56,7 +90,9 @@ Fuseki admin UI (undocumented, and not what `docker-compose.yml` sets up).
 provision multiple named datasets if the intent was really to separate
 `counterbench`/`conceptnet` data from general `dataset` data.
 
-### 3. `run_experiment.py --use-real-sparql` crashes: wrong argparse dest
+### 3. `run_experiment.py --use-real-sparql` crashes: wrong argparse dest - FIXED
+Renamed the flag to `--entity-threshold` (matches what the code reads).
+
 `--entity-th` is declared as `parser.add_argument("--entity-th", ...)`
 ([experiments/run_experiment.py:718-723](experiments/run_experiment.py#L718-L723)), which argparse exposes as
 `args.entity_th`. But the code reads `args.entity_threshold` twice
@@ -70,7 +106,20 @@ on every `--use-real-sparql` run.
 
 ## P1 - wrong or silently-broken behavior
 
-### 4. All SPARQL calls block the FastAPI event loop
+### 4. All SPARQL calls block the FastAPI event loop - FIXED
+Wrapped both blocking call sites in `asyncio.to_thread` -
+`TruthAnchor._execute_query()` and `EntityLinker`'s call site,
+`SemanticParser._get_entity_uri()` (`EntityLinker`'s own methods are
+synchronous helpers; the fix is at the async callers that were blocking on
+them). While fixing this, also caught and fixed a related bug it would have
+introduced: both classes previously reused one `SPARQLWrapper` instance
+across calls, mutating it via `setQuery()` immediately before the blocking
+call. Once that call runs on a worker thread instead of inline, the event
+loop is free to run other coroutines in the gap - so two concurrent
+requests sharing one `SPARQLWrapper` could race and execute each other's
+query. Fixed by constructing a fresh `SPARQLWrapper` per query in both
+classes instead. Verified with 5 concurrent real requests against live
+Fuseki data - each got back exactly its own triplet/verification result.
 `TruthAnchor.verify()`/`_execute_query()` ([modules/truth_anchor/verifier.py:40](modules/truth_anchor/verifier.py#L40),
 `:143`) and `EntityLinker._execute_sparql_query()`
 ([modules/semantic_parser/parser.py:201](modules/semantic_parser/parser.py#L201)) are declared `async def` but call
@@ -146,7 +195,10 @@ implementation with different bugs (see #5, which `knowledge_base_fvl.py`
 doesn't appear to share). Worth deciding which one is canonical and having
 the other delegate to it, same shape as #7.
 
-### 9. `docker-compose.yml` / comments reference a `framework1`/`framework2` split that doesn't exist in this repo
+### 9. `docker-compose.yml` / comments reference a `framework1`/`framework2` split that doesn't exist in this repo - FIXED
+Scrubbed the stale comment and corrected the usage example to the actual
+path in this repo (`deployment/docker-compose.yml`, not
+`framework1/deployment/docker-compose.yml`).
 [deployment/docker-compose.yml:3-7](deployment/docker-compose.yml#L3-L7) says "Infra for framework1 (CAF)... framework2
 needs neither of these services" and references `docs/SETUP.md`, none of
 which exist in this repo (no `framework2/`, no `docs/`). Leftover from
@@ -167,6 +219,36 @@ else falls through to a generic `http://local.caf/relation/<verb>` URI built
 from spaCy's raw verb token, which is unlikely to literally contain strings
 like `resultin` or `leadto`. Most of this keyword list can currently never
 match what the parser actually produces.
+
+### 12. Concrete example of the "naive extractor" gotcha already in README
+Found while smoke-testing #4's fix against real KB data (a small
+k8s/microservices causal graph, 92 triples, loaded via the companion
+causal-discovery repo per the README). The KB contains a genuinely true
+edge `response_time -> causes -> health_check_timeout`, but asking
+`SemanticParser` to parse "response time causes health check timeout."
+extracts zero triplets - not a contradiction, a silent miss. Cause: spaCy
+tags "timeout" as `ccomp` (clausal complement) rather than `dobj` for this
+sentence -
+```
+response   compound -> time
+time       nsubj    -> causes
+causes     ROOT
+health     compound -> check
+check      compound -> timeout
+timeout    ccomp    -> causes
+```
+- an artifact of spaCy's general-domain model on compound technical nouns
+("health check timeout" reads to it like it could be a reduced clause), not
+a bug in `_parse_text`'s dobj/attr/pobj/prep-pobj child search added for #7
+below - that logic is doing the right thing with what spaCy hands it. Two
+adjacent sentences with the same "X causes Y" shape and comparable object
+length parsed fine (see the smoke test), so this isn't a length or
+compound-noun-count issue in general - it's sentence-specific to how spaCy's
+parser happens to tag "timeout" here. Worth a wider check of which real
+KB-derived phrasings get silently dropped this way before trusting FAILED
+results at face value; not fixed here since patching dependency-parse
+heuristics for one lexical case invites whack-a-mole without broader
+sampling first.
 
 ### 11. Unused `causality:` SPARQL prefix
 `SemanticParser._generate_sparql` declares `PREFIX causality: <http://causality.org/>`

@@ -32,21 +32,28 @@ Usage:
         --output results/counterbench_full
 """
 
-import json
 import argparse
+import json
+import sys
+from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
-from dataclasses import dataclass, asdict
-from datetime import datetime
-import sys
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from experiments.caf_algorithm import CAFLoop, CAFConfig, AdjudicationDecision
-from common.llm_integration import create_causal_lm_layer
-from experiments.caf_algorithm import SimulatedInferenceLayer, SimulatedFVL, IterationLog, VerificationResult, RDFTriplet
 from enum import Enum
+
+from experiments.caf_algorithm import (
+    CAFConfig,
+    CAFLoop,
+    IterationLog,
+    RDFTriplet,
+    SimulatedFVL,
+    SimulatedInferenceLayer,
+    VerificationResult,
+)
 
 
 def make_json_serializable(obj: Any) -> Any:
@@ -89,10 +96,7 @@ class CounterBenchEvaluator:
     """Evaluate CAF on CounterBench dataset."""
 
     def __init__(
-        self,
-        caf_loop: CAFLoop,
-        use_llm: bool = False,
-        use_sparql: bool = False
+        self, caf_loop: CAFLoop, use_llm: bool = False, use_sparql: bool = False
     ):
         """
         Initialize evaluator.
@@ -120,34 +124,32 @@ class CounterBenchEvaluator:
         response_lower = response.lower()
 
         # Check for uncertainty first (highest priority)
-        if 'cannot determine' in response_lower or 'uncertain' in response_lower:
-            return 'unknown'
+        if "cannot determine" in response_lower or "uncertain" in response_lower:
+            return "unknown"
 
         # Check for specific counterfactual patterns (more specific than yes/no alone)
-        if 'would not occur' in response_lower or 'would not happen' in response_lower:
-            return 'no'
-        elif 'would occur' in response_lower or 'would happen' in response_lower:
-            return 'yes'
+        if "would not occur" in response_lower or "would not happen" in response_lower:
+            return "no"
+        elif "would occur" in response_lower or "would happen" in response_lower:
+            return "yes"
 
         # Look for explicit yes/no (less specific, so checked last)
         # When both appear, prioritize context by looking at first occurrence
-        yes_idx = response_lower.find('yes')
-        no_idx = response_lower.find('no')
+        yes_idx = response_lower.find("yes")
+        no_idx = response_lower.find("no")
 
         if yes_idx != -1 and no_idx == -1:
-            return 'yes'
+            return "yes"
         elif no_idx != -1 and yes_idx == -1:
-            return 'no'
+            return "no"
         elif yes_idx != -1 and no_idx != -1:
             # Both appear - use whichever comes first
-            return 'yes' if yes_idx < no_idx else 'no'
+            return "yes" if yes_idx < no_idx else "no"
         else:
-            return 'unknown'
+            return "unknown"
 
     def process_example(
-        self,
-        example: dict[str, Any],
-        verbose: bool = False
+        self, example: dict[str, Any], verbose: bool = False
     ) -> CounterBenchResult:
         """
         Process single CounterBench example through CAF.
@@ -159,11 +161,11 @@ class CounterBenchEvaluator:
         Returns:
             CounterBenchResult
         """
-        question_id = example['id']
-        query = example['query']
-        context = example['context']
-        expected_answer = example['expected_answer']
-        reasoning_type = example['metadata']['reasoning_type']
+        question_id = example["id"]
+        query = example["query"]
+        context = example["context"]
+        expected_answer = example["expected_answer"]
+        reasoning_type = example["metadata"]["reasoning_type"]
 
         # Combine context and query for CAF
         full_query = f"{context}\n\nQuestion: {query}"
@@ -184,7 +186,7 @@ class CounterBenchEvaluator:
             caf_answer = self.extract_answer(caf_result.final_response)
 
             # Check if correct
-            correct = (caf_answer == expected_answer)
+            correct = caf_answer == expected_answer
 
             result = CounterBenchResult(
                 question_id=question_id,
@@ -198,9 +200,11 @@ class CounterBenchEvaluator:
                 reasoning_type=reasoning_type,
                 response_text=caf_result.final_response,
                 verification_details={
-                    'iteration_logs': [make_json_serializable(log) for log in caf_result.iteration_logs],
-                    'iteration_count': caf_result.iterations_used
-                }
+                    "iteration_logs": [
+                        make_json_serializable(log) for log in caf_result.iteration_logs
+                    ],
+                    "iteration_count": caf_result.iterations_used,
+                },
             )
 
             if verbose:
@@ -218,13 +222,13 @@ class CounterBenchEvaluator:
                 question_id=question_id,
                 query=query,
                 expected_answer=expected_answer,
-                caf_answer='Unknown',
-                caf_decision='ERROR',
+                caf_answer="Unknown",
+                caf_decision="ERROR",
                 caf_score=0.0,
                 iterations=0,
                 correct=False,
                 reasoning_type=reasoning_type,
-                response_text=f"Error: {str(e)}"
+                response_text=f"Error: {str(e)}",
             )
 
         self.results.append(result)
@@ -234,7 +238,7 @@ class CounterBenchEvaluator:
         self,
         examples: list[dict[str, Any]],
         limit: int | None = None,
-        verbose: bool = False
+        verbose: bool = False,
     ) -> None:
         """
         Evaluate CAF on all examples.
@@ -248,12 +252,17 @@ class CounterBenchEvaluator:
             examples = examples[:limit]
 
         print(f"\nEvaluating CAF on {len(examples)} CounterBench examples...")
-        print(f"Configuration: LLM={'Real' if self.use_llm else 'Simulated'}, "
-              f"SPARQL={'Real' if self.use_sparql else 'Simulated'}")
+        print(
+            f"Configuration: LLM={'Real' if self.use_llm else 'Simulated'}, "
+            f"SPARQL={'Real' if self.use_sparql else 'Simulated'}"
+        )
 
         for i, example in enumerate(examples, 1):
             if not verbose:
-                print(f"\rProgress: {i}/{len(examples)} ({i*100//len(examples)}%)", end='')
+                print(
+                    f"\rProgress: {i}/{len(examples)} ({i * 100 // len(examples)}%)",
+                    end="",
+                )
 
             self.process_example(example, verbose=verbose)
 
@@ -279,27 +288,29 @@ class CounterBenchEvaluator:
         for result in self.results:
             rtype = result.reasoning_type
             if rtype not in by_type:
-                by_type[rtype] = {'total': 0, 'correct': 0}
+                by_type[rtype] = {"total": 0, "correct": 0}
 
-            by_type[rtype]['total'] += 1
+            by_type[rtype]["total"] += 1
             if result.correct:
-                by_type[rtype]['correct'] += 1
+                by_type[rtype]["correct"] += 1
 
         for rtype in by_type:
-            total_type = by_type[rtype]['total']
-            correct_type = by_type[rtype]['correct']
-            by_type[rtype]['accuracy'] = correct_type / total_type if total_type > 0 else 0.0
+            total_type = by_type[rtype]["total"]
+            correct_type = by_type[rtype]["correct"]
+            by_type[rtype]["accuracy"] = (
+                correct_type / total_type if total_type > 0 else 0.0
+            )
 
         # Metrics by CAF decision
         by_decision = {}
         for result in self.results:
             dec = result.caf_decision
             if dec not in by_decision:
-                by_decision[dec] = {'total': 0, 'correct': 0}
+                by_decision[dec] = {"total": 0, "correct": 0}
 
-            by_decision[dec]['total'] += 1
+            by_decision[dec]["total"] += 1
             if result.correct:
-                by_decision[dec]['correct'] += 1
+                by_decision[dec]["correct"] += 1
 
         # Answer distribution
         answer_dist = {}
@@ -312,18 +323,15 @@ class CounterBenchEvaluator:
         avg_score = sum(r.caf_score for r in self.results) / total
 
         return {
-            'total_examples': total,
-            'correct': correct,
-            'accuracy': accuracy,
-            'by_type': by_type,
-            'by_decision': by_decision,
-            'answer_distribution': answer_dist,
-            'avg_iterations': avg_iterations,
-            'avg_score': avg_score,
-            'configuration': {
-                'use_llm': self.use_llm,
-                'use_sparql': self.use_sparql
-            }
+            "total_examples": total,
+            "correct": correct,
+            "accuracy": accuracy,
+            "by_type": by_type,
+            "by_decision": by_decision,
+            "answer_distribution": answer_dist,
+            "avg_iterations": avg_iterations,
+            "avg_score": avg_score,
+            "configuration": {"use_llm": self.use_llm, "use_sparql": self.use_sparql},
         }
 
     def save_results(self, output_dir: str) -> None:
@@ -337,28 +345,30 @@ class CounterBenchEvaluator:
         output_path.mkdir(parents=True, exist_ok=True)
 
         # Save detailed results
-        results_file = output_path / 'results.json'
-        with open(results_file, 'w') as f:
+        results_file = output_path / "results.json"
+        with open(results_file, "w") as f:
             json.dump([asdict(r) for r in self.results], f, indent=2)
         print(f"\n✓ Saved detailed results to {results_file}")
 
         # Compute and save metrics
         metrics = self.compute_metrics()
-        metrics_file = output_path / 'metrics.json'
-        with open(metrics_file, 'w') as f:
+        metrics_file = output_path / "metrics.json"
+        with open(metrics_file, "w") as f:
             json.dump(metrics, f, indent=2)
         print(f"✓ Saved metrics to {metrics_file}")
 
         # Save summary report
-        report_file = output_path / 'report.txt'
-        with open(report_file, 'w') as f:
+        report_file = output_path / "report.txt"
+        with open(report_file, "w") as f:
             f.write("=" * 70 + "\n")
             f.write("CAF CounterBench Evaluation Report\n")
             f.write("=" * 70 + "\n\n")
 
             f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"Configuration: LLM={'Real' if self.use_llm else 'Simulated'}, "
-                   f"SPARQL={'Real' if self.use_sparql else 'Simulated'}\n\n")
+            f.write(
+                f"Configuration: LLM={'Real' if self.use_llm else 'Simulated'}, "
+                f"SPARQL={'Real' if self.use_sparql else 'Simulated'}\n\n"
+            )
 
             f.write("OVERALL PERFORMANCE\n")
             f.write("-" * 70 + "\n")
@@ -370,15 +380,17 @@ class CounterBenchEvaluator:
 
             f.write("PERFORMANCE BY REASONING TYPE\n")
             f.write("-" * 70 + "\n")
-            for rtype, stats in sorted(metrics['by_type'].items()):
-                f.write(f"{rtype:15} | {stats['correct']:3}/{stats['total']:3} | "
-                       f"Accuracy: {stats['accuracy']:.2%}\n")
+            for rtype, stats in sorted(metrics["by_type"].items()):
+                f.write(
+                    f"{rtype:15} | {stats['correct']:3}/{stats['total']:3} | "
+                    f"Accuracy: {stats['accuracy']:.2%}\n"
+                )
 
             f.write("\n")
             f.write("ANSWER DISTRIBUTION\n")
             f.write("-" * 70 + "\n")
-            for answer, count in sorted(metrics['answer_distribution'].items()):
-                pct = count / metrics['total_examples'] * 100
+            for answer, count in sorted(metrics["answer_distribution"].items()):
+                pct = count / metrics["total_examples"] * 100
                 f.write(f"{answer:10} | {count:4} ({pct:5.1f}%)\n")
 
         print(f"✓ Saved summary report to {report_file}")
@@ -391,105 +403,94 @@ class CounterBenchEvaluator:
         print("COUNTERBENCH EVALUATION SUMMARY")
         print("=" * 70)
 
-        print(f"\nOverall Accuracy: {metrics['accuracy']:.2%} "
-              f"({metrics['correct']}/{metrics['total_examples']})")
+        print(
+            f"\nOverall Accuracy: {metrics['accuracy']:.2%} "
+            f"({metrics['correct']}/{metrics['total_examples']})"
+        )
 
         print("\nBy Reasoning Type:")
-        for rtype, stats in sorted(metrics['by_type'].items()):
-            print(f"  {rtype:15} | {stats['correct']:3}/{stats['total']:3} | "
-                  f"{stats['accuracy']:.2%}")
+        for rtype, stats in sorted(metrics["by_type"].items()):
+            print(
+                f"  {rtype:15} | {stats['correct']:3}/{stats['total']:3} | "
+                f"{stats['accuracy']:.2%}"
+            )
 
         print(f"\nAvg Iterations: {metrics['avg_iterations']:.1f}")
         print(f"Avg Score: {metrics['avg_score']:.2f}")
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Run CAF on CounterBench dataset"
-    )
+    parser = argparse.ArgumentParser(description="Run CAF on CounterBench dataset")
 
     # Input/Output
     parser.add_argument(
-        '--input',
-        required=True,
-        help='Input JSON file (from load_counterbench.py)'
+        "--input", required=True, help="Input JSON file (from load_counterbench.py)"
     )
     parser.add_argument(
-        '--output',
-        default='results/counterbench',
-        help='Output directory for results'
+        "--output", default="results/counterbench", help="Output directory for results"
     )
 
     # CAF Configuration
     parser.add_argument(
-        '--max-iterations',
-        type=int,
-        default=5,
-        help='Maximum CAF iterations'
+        "--max-iterations", type=int, default=5, help="Maximum CAF iterations"
     )
     parser.add_argument(
-        '--verification-threshold',
+        "--verification-threshold",
         type=float,
         default=0.8,
-        help='Verification threshold for ACCEPT decision'
+        help="Verification threshold for ACCEPT decision",
     )
 
     # LLM Configuration
     parser.add_argument(
-        '--use-llm',
-        action='store_true',
-        help='Use real LLM instead of simulation'
+        "--use-llm", action="store_true", help="Use real LLM instead of simulation"
     )
     parser.add_argument(
-        '--llm-model',
-        default='7b',
-        choices=['7b', '8b', '13b', 'tiny', 'phi2', 'mistral'],
-        help='LLM model size/type (7b=Llama-2-7B [3.5GB], tiny=TinyLlama-1.1B [0.6GB], phi2=Phi-2-2.7B [1.5GB], mistral=Mistral-7B [3.5GB])'
+        "--llm-model",
+        default="7b",
+        choices=["7b", "8b", "13b", "tiny", "phi2", "mistral"],
+        help="LLM model size/type (7b=Llama-2-7B [3.5GB], tiny=TinyLlama-1.1B [0.6GB], phi2=Phi-2-2.7B [1.5GB], mistral=Mistral-7B [3.5GB])",
     )
     parser.add_argument(
-        '--llm-4bit',
-        action='store_true',
-        help='Use 4-bit quantization for LLM (recommended for 4GB GPU)'
+        "--llm-4bit",
+        action="store_true",
+        help="Use 4-bit quantization for LLM (recommended for 4GB GPU)",
     )
 
     # SPARQL Configuration
     parser.add_argument(
-        '--use-real-sparql',
-        action='store_true',
-        help='Use real SPARQL verification'
+        "--use-real-sparql", action="store_true", help="Use real SPARQL verification"
     )
     parser.add_argument(
-        '--sparql-endpoint',
-        default='http://localhost:3030/conceptnet/query',
-        help='SPARQL endpoint URL'
+        "--sparql-endpoint",
+        default="http://localhost:3030/dataset/query",
+        help="SPARQL endpoint URL",
     )
 
     # Evaluation options
     parser.add_argument(
-        '--limit',
-        type=int,
-        help='Limit number of examples to evaluate'
+        "--limit", type=int, help="Limit number of examples to evaluate"
     )
     parser.add_argument(
-        '--verbose',
-        action='store_true',
-        help='Print detailed information for each example'
+        "--verbose",
+        action="store_true",
+        help="Print detailed information for each example",
     )
 
     # Knowledge base extraction
     parser.add_argument(
-        '--extract-kb',
-        action='store_true',
-        help='Extract causal KB from dataset and load into SPARQL endpoint'
+        "--extract-kb",
+        action="store_true",
+        help="Extract causal KB from dataset and load into SPARQL endpoint",
     )
     parser.add_argument(
-        '--kb-file',
-        default='data/counterbench_kb.nt',
-        help='Path to save/load extracted KB (N-Triples format)'
+        "--kb-file",
+        default="data/counterbench_kb.nt",
+        help="Path to save/load extracted KB (N-Triples format)",
     )
     parser.add_argument(
-        '--fuseki-data-endpoint',
-        help='Fuseki data endpoint for loading KB (default: derived from sparql-endpoint)'
+        "--fuseki-data-endpoint",
+        help="Fuseki data endpoint for loading KB (default: derived from sparql-endpoint)",
     )
 
     args = parser.parse_args()
@@ -508,7 +509,8 @@ def main():
 
         # Import extractor
         import sys
-        sys.path.insert(0, str(Path(__file__).parent.parent / 'scripts'))
+
+        sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
         from convert_counterbench_to_rdf import CounterBenchKBExtractor
 
         # Extract relations
@@ -525,56 +527,63 @@ def main():
         else:
             # Convert query endpoint to data endpoint
             # http://localhost:3030/counterbench/query -> http://localhost:3030/counterbench/data
-            data_endpoint = args.sparql_endpoint.replace('/query', '/data')
+            data_endpoint = args.sparql_endpoint.replace("/query", "/data")
 
         print(f"\nLoading KB into Fuseki ({data_endpoint})...")
 
         # Load into Fuseki
         import subprocess
+
         try:
             result = subprocess.run(
                 [
-                    'curl', '-X', 'POST',
-                    '-H', 'Content-Type: application/n-triples',
-                    '--data-binary', f'@{kb_file}',
-                    data_endpoint
+                    "curl",
+                    "-X",
+                    "POST",
+                    "-H",
+                    "Content-Type: application/n-triples",
+                    "--data-binary",
+                    f"@{kb_file}",
+                    data_endpoint,
                 ],
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
             )
 
             if result.returncode == 0:
                 print("✓ KB loaded successfully into SPARQL endpoint")
             else:
-                print(f"⚠ Warning: Failed to load KB into Fuseki")
+                print("⚠ Warning: Failed to load KB into Fuseki")
                 print(f"  Error: {result.stderr}")
-                print(f"\nManual loading:")
-                print(f"  curl -X POST -H 'Content-Type: application/n-triples' \\")
+                print("\nManual loading:")
+                print("  curl -X POST -H 'Content-Type: application/n-triples' \\")
                 print(f"       --data-binary @{kb_file} \\")
                 print(f"       {data_endpoint}")
 
         except subprocess.TimeoutExpired:
             print("⚠ Warning: Timeout loading KB into Fuseki")
-            print(f"\nManual loading:")
-            print(f"  curl -X POST -H 'Content-Type: application/n-triples' \\")
+            print("\nManual loading:")
+            print("  curl -X POST -H 'Content-Type: application/n-triples' \\")
             print(f"       --data-binary @{kb_file} \\")
             print(f"       {data_endpoint}")
         except FileNotFoundError:
             print("⚠ Warning: 'curl' command not found")
-            print(f"\nManual loading:")
-            print(f"  curl -X POST -H 'Content-Type: application/n-triples' \\")
+            print("\nManual loading:")
+            print("  curl -X POST -H 'Content-Type: application/n-triples' \\")
             print(f"       --data-binary @{kb_file} \\")
             print(f"       {data_endpoint}")
 
     # Initialize inference layer
     if args.use_llm:
-        print(f"\nInitializing real LLM ({args.llm_model}, "
-              f"{'4-bit' if args.llm_4bit else '8-bit'})...")
+        print(
+            f"\nInitializing real LLM ({args.llm_model}, "
+            f"{'4-bit' if args.llm_4bit else '8-bit'})..."
+        )
         from common.llm_integration import create_causal_lm_layer
+
         inference_layer = create_causal_lm_layer(
-            model_size=args.llm_model,
-            use_4bit=args.llm_4bit
+            model_size=args.llm_model, use_4bit=args.llm_4bit
         )
         print("✓ LLM loaded")
     else:
@@ -585,6 +594,7 @@ def main():
     if args.use_real_sparql:
         print(f"\nInitializing real SPARQL verification ({args.sparql_endpoint})...")
         from experiments.knowledge_base_fvl import KnowledgeBaseFVL
+
         verification_layer = KnowledgeBaseFVL(sparql_endpoint=args.sparql_endpoint)
         print("✓ SPARQL endpoint ready")
     else:
@@ -595,20 +605,18 @@ def main():
     # Create CAF loop
     caf_config = CAFConfig(
         max_iterations=args.max_iterations,
-        verification_threshold=args.verification_threshold
+        verification_threshold=args.verification_threshold,
     )
 
     caf_loop = CAFLoop(
         config=caf_config,
         inference_layer=inference_layer,
-        verification_layer=verification_layer
+        verification_layer=verification_layer,
     )
 
     # Create evaluator
     evaluator = CounterBenchEvaluator(
-        caf_loop=caf_loop,
-        use_llm=args.use_llm,
-        use_sparql=args.use_real_sparql
+        caf_loop=caf_loop, use_llm=args.use_llm, use_sparql=args.use_real_sparql
     )
 
     # Run evaluation
@@ -620,11 +628,11 @@ def main():
     # Save results
     evaluator.save_results(args.output)
 
-    print(f"\n✓ Evaluation complete!")
+    print("\n✓ Evaluation complete!")
     print(f"\nResults saved to: {args.output}/")
 
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     exit(main())

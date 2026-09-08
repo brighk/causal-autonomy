@@ -2,18 +2,24 @@
 Configuration management using Pydantic Settings.
 Loads configuration from environment variables and .env files.
 """
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+
 from functools import lru_cache
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application settings"""
 
     # Application
-    app_name: str = Field(default="Causal Autonomy Framework", description="Application name")
+    app_name: str = Field(
+        default="Causal Autonomy Framework", description="Application name"
+    )
     app_version: str = Field(default="1.0.0", description="Application version")
-    environment: str = Field(default="development", description="Environment (development, production)")
+    environment: str = Field(
+        default="development", description="Environment (development, production)"
+    )
 
     # API Gateway
     api_host: str = Field(default="0.0.0.0", description="API host")
@@ -22,39 +28,48 @@ class Settings(BaseSettings):
 
     # Inference Engine
     inference_engine_url: str = Field(
-        default="http://localhost:8001",
-        description="Inference engine service URL"
+        default="http://localhost:8001", description="Inference engine service URL"
     )
     model_name: str = Field(
-        default="meta-llama/Llama-3-70b-chat-hf",
-        description="LLM model name"
+        default="meta-llama/Llama-3-70b-chat-hf", description="LLM model name"
     )
-    tensor_parallel_size: int = Field(default=1, description="Tensor parallelism degree")
-    gpu_memory_utilization: float = Field(default=0.9, description="GPU memory utilization")
+    tensor_parallel_size: int = Field(
+        default=1, description="Tensor parallelism degree"
+    )
+    gpu_memory_utilization: float = Field(
+        default=0.9, description="GPU memory utilization"
+    )
     use_vllm: bool = Field(default=True, description="Use vLLM for inference")
+    load_in_4bit: bool = Field(
+        default=False,
+        description="4-bit quantize the model on the HF fallback path (vLLM unavailable/disabled)",
+    )
+    load_in_8bit: bool = Field(
+        default=False,
+        description="8-bit quantize the model on the HF fallback path (vLLM unavailable/disabled)",
+    )
 
     # Apache Jena Fuseki
     fuseki_endpoint: str = Field(
         default="http://localhost:3030/dataset/query",
-        description="Fuseki SPARQL endpoint"
+        description="Fuseki SPARQL endpoint",
     )
     fuseki_update_endpoint: str = Field(
         default="http://localhost:3030/dataset/update",
-        description="Fuseki SPARQL update endpoint"
+        description="Fuseki SPARQL update endpoint",
+    )
+    fuseki_admin_password: str | None = Field(
+        default=None,
+        description="Admin password for the Fuseki container (consumed by docker-compose, not read by app code) - "
+        "declared here so a .env following .env.example doesn't crash Settings() with 'extra_forbidden'",
     )
 
     # Verification Settings
     verification_threshold: float = Field(
-        default=0.8,
-        ge=0.0,
-        le=1.0,
-        description="Similarity threshold for verification"
+        default=0.8, ge=0.0, le=1.0, description="Similarity threshold for verification"
     )
     max_refinement_iterations: int = Field(
-        default=3,
-        ge=1,
-        le=10,
-        description="Maximum refinement iterations"
+        default=3, ge=1, le=10, description="Maximum refinement iterations"
     )
 
     # Monitoring
@@ -65,7 +80,7 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", description="Logging level")
     log_format: str = Field(
         default="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-        description="Log format"
+        description="Log format",
     )
 
     # Security
@@ -74,11 +89,15 @@ class Settings(BaseSettings):
 
     # Data
     rdf_data_dir: str = Field(default="./data/rdf", description="RDF data directory")
-    vector_data_dir: str = Field(default="./data/vectors", description="Vector data directory")
+    vector_data_dir: str = Field(
+        default="./data/vectors", description="Vector data directory"
+    )
 
     # Performance
     request_timeout: int = Field(default=300, description="Request timeout in seconds")
-    max_concurrent_requests: int = Field(default=10, description="Max concurrent requests")
+    max_concurrent_requests: int = Field(
+        default=10, description="Max concurrent requests"
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",

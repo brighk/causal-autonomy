@@ -14,40 +14,38 @@ Usage:
 
 import argparse
 import json
-import time
-import sys
-from pathlib import Path
-from datetime import datetime
-from typing import Any
-from dataclasses import asdict
 import random
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from experiments.synthetic_dataset import (
-    SyntheticDatasetGenerator,
-    CausalChain,
-    PerturbationType,
-)
-from experiments.caf_algorithm import (
-    CAFLoop,
-    CAFConfig,
-    CAFOutput,
-    get_algorithm_pseudocode,
-    get_algorithm_latex,
-)
-from experiments.metrics import (
-    MetricsCalculator,
-    ExperimentMetrics,
-    compute_baseline_comparison,
-    generate_latex_results_table,
-)
 from experiments.baselines import (
-    create_vanilla_baseline,
     create_cot_baseline,
     create_rag_baseline,
     create_rag_cot_baseline,
+    create_vanilla_baseline,
+)
+from experiments.caf_algorithm import (
+    CAFConfig,
+    CAFLoop,
+    CAFOutput,
+    get_algorithm_latex,
+    get_algorithm_pseudocode,
+)
+from experiments.metrics import (
+    ExperimentMetrics,
+    MetricsCalculator,
+    compute_baseline_comparison,
+)
+from experiments.synthetic_dataset import (
+    CausalChain,
+    PerturbationType,
+    SyntheticDatasetGenerator,
 )
 
 
@@ -64,8 +62,8 @@ class ExperimentRunner:
         output_dir: str = "experiments/results",
         seed: int = 42,
         verbose: bool = True,
-        inference_layer = None,
-        verification_layer = None  # NEW: Allow custom FVL
+        inference_layer=None,
+        verification_layer=None,  # NEW: Allow custom FVL
     ):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -81,7 +79,7 @@ class ExperimentRunner:
                 verification_threshold=0.8,
             ),
             inference_layer=inference_layer,  # Use provided IL or default to simulated
-            verification_layer=verification_layer  # Use provided FVL or default to simulated
+            verification_layer=verification_layer,  # Use provided FVL or default to simulated
         )
         self.metrics_calc = MetricsCalculator()
 
@@ -96,7 +94,9 @@ class ExperimentRunner:
             self.vanilla_baseline = create_vanilla_baseline(inference_layer)
             self.cot_baseline = create_cot_baseline(inference_layer, num_steps=3)
             self.rag_baseline = create_rag_baseline(inference_layer, top_k=3)
-            self.rag_cot_baseline = create_rag_cot_baseline(inference_layer, top_k=3, num_steps=3)
+            self.rag_cot_baseline = create_rag_cot_baseline(
+                inference_layer, top_k=3, num_steps=3
+            )
 
         # Results storage
         self.dataset: list[CausalChain] = []
@@ -108,9 +108,9 @@ class ExperimentRunner:
         self.perturbation_outputs: list[dict[PerturbationType, CAFOutput]] = []
         # Baseline outputs on perturbed prompts, needed to measure baseline
         # semantic invariance under the same protocol as CAF.
-        self.baseline_pert_outputs: dict[str, list[dict[PerturbationType, CAFOutput]]] = {
-            "Vanilla": [], "CoT": [], "RAG": [], "RAG+CoT": []
-        }
+        self.baseline_pert_outputs: dict[
+            str, list[dict[PerturbationType, CAFOutput]]
+        ] = {"Vanilla": [], "CoT": [], "RAG": [], "RAG+CoT": []}
 
     def log(self, message: str):
         """Log message if verbose mode enabled."""
@@ -118,9 +118,7 @@ class ExperimentRunner:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}")
 
     def generate_dataset(
-        self,
-        num_chains: int = 75,
-        perturbations_per_chain: int = 3
+        self, num_chains: int = 75, perturbations_per_chain: int = 3
     ) -> list[CausalChain]:
         """
         Generate synthetic causal chain dataset.
@@ -132,7 +130,9 @@ class ExperimentRunner:
         Returns:
             List of generated CausalChain objects
         """
-        self.log(f"Generating dataset: {num_chains} chains, {perturbations_per_chain} perturbations each...")
+        self.log(
+            f"Generating dataset: {num_chains} chains, {perturbations_per_chain} perturbations each..."
+        )
 
         self.dataset = self.generator.generate_dataset(
             num_chains=num_chains,
@@ -140,11 +140,13 @@ class ExperimentRunner:
             max_depth=10,
             perturbations_per_chain=perturbations_per_chain,
             contradiction_rate=0.2,
-            domains=["physics", "biology", "economics", "logic", "causality"]
+            domains=["physics", "biology", "economics", "logic", "causality"],
         )
 
-        self.log(f"Generated {len(self.dataset)} chains with "
-                 f"{sum(len(c.perturbations) for c in self.dataset)} total perturbations")
+        self.log(
+            f"Generated {len(self.dataset)} chains with "
+            f"{sum(len(c.perturbations) for c in self.dataset)} total perturbations"
+        )
 
         return self.dataset
 
@@ -169,14 +171,18 @@ class ExperimentRunner:
         use_baselines = self.inference_layer is not None
 
         for i, chain in enumerate(self.dataset):
-            self.log(f"Chain {i + 1}/{len(self.dataset)} | domain={chain.domain} depth={chain.depth} contradictions={len(chain.injected_contradictions)}")
+            self.log(
+                f"Chain {i + 1}/{len(self.dataset)} | domain={chain.domain} depth={chain.depth} contradictions={len(chain.injected_contradictions)}"
+            )
 
             # Run CAF on original prompt
-            self.log(f"  [CAF] running...")
+            self.log("  [CAF] running...")
             caf_output, baseline_output = self.caf.execute_with_baseline(
                 chain.to_prompt()
             )
-            self.log(f"  [CAF] done: iters={caf_output.iterations_used} score={caf_output.final_score:.3f} decision={caf_output.decision.value}")
+            self.log(
+                f"  [CAF] done: iters={caf_output.iterations_used} score={caf_output.final_score:.3f} decision={caf_output.decision.value}"
+            )
             self.caf_outputs.append(caf_output)
             self.baseline_outputs.append(baseline_output)
 
@@ -192,23 +198,31 @@ class ExperimentRunner:
                 prompt = chain.to_prompt()
 
                 # Chain of Thought
-                self.log(f"  [CoT] running...")
+                self.log("  [CoT] running...")
                 cot_response = self.cot_baseline.generate(prompt)
-                cot_output = self._create_output_from_response(cot_response, knowledge_base=None)
+                cot_output = self._create_output_from_response(
+                    cot_response, knowledge_base=None
+                )
                 self.log(f"  [CoT] done: score={cot_output.final_score:.3f}")
                 self.cot_outputs.append(cot_output)
 
                 # RAG
-                self.log(f"  [RAG] running...")
+                self.log("  [RAG] running...")
                 rag_response = self.rag_baseline.generate(prompt, domain=chain.domain)
-                rag_output = self._create_output_from_response(rag_response, knowledge_base=None)
+                rag_output = self._create_output_from_response(
+                    rag_response, knowledge_base=None
+                )
                 self.log(f"  [RAG] done: score={rag_output.final_score:.3f}")
                 self.rag_outputs.append(rag_output)
 
                 # RAG + CoT (strongest baseline)
-                self.log(f"  [RAG+CoT] running...")
-                rag_cot_response = self.rag_cot_baseline.generate(prompt, domain=chain.domain)
-                rag_cot_output = self._create_output_from_response(rag_cot_response, knowledge_base=None)
+                self.log("  [RAG+CoT] running...")
+                rag_cot_response = self.rag_cot_baseline.generate(
+                    prompt, domain=chain.domain
+                )
+                rag_cot_output = self._create_output_from_response(
+                    rag_cot_response, knowledge_base=None
+                )
                 self.log(f"  [RAG+CoT] done: score={rag_cot_output.final_score:.3f}")
                 self.rag_cot_outputs.append(rag_cot_output)
 
@@ -220,7 +234,9 @@ class ExperimentRunner:
                 ptype = perturbation.perturbation_type
                 self.log(f"  [perturbation={ptype.value}] CAF running...")
                 pert_output = self.caf.execute(perturbation.perturbed_prompt)
-                self.log(f"  [perturbation={ptype.value}] CAF done: score={pert_output.final_score:.3f}")
+                self.log(
+                    f"  [perturbation={ptype.value}] CAF done: score={pert_output.final_score:.3f}"
+                )
                 perturbation_results[perturbation.perturbation_type] = pert_output
 
                 if use_baselines:
@@ -228,20 +244,36 @@ class ExperimentRunner:
 
                     self.log(f"  [perturbation={ptype.value}] baselines running...")
                     vanilla_response = self.vanilla_baseline.generate(pert_prompt)
-                    baseline_pert_results["Vanilla"][ptype] = \
-                        self._create_output_from_response(vanilla_response, knowledge_base=None)
+                    baseline_pert_results["Vanilla"][ptype] = (
+                        self._create_output_from_response(
+                            vanilla_response, knowledge_base=None
+                        )
+                    )
 
                     cot_response = self.cot_baseline.generate(pert_prompt)
-                    baseline_pert_results["CoT"][ptype] = \
-                        self._create_output_from_response(cot_response, knowledge_base=None)
+                    baseline_pert_results["CoT"][ptype] = (
+                        self._create_output_from_response(
+                            cot_response, knowledge_base=None
+                        )
+                    )
 
-                    rag_response = self.rag_baseline.generate(pert_prompt, domain=chain.domain)
-                    baseline_pert_results["RAG"][ptype] = \
-                        self._create_output_from_response(rag_response, knowledge_base=None)
+                    rag_response = self.rag_baseline.generate(
+                        pert_prompt, domain=chain.domain
+                    )
+                    baseline_pert_results["RAG"][ptype] = (
+                        self._create_output_from_response(
+                            rag_response, knowledge_base=None
+                        )
+                    )
 
-                    rag_cot_response = self.rag_cot_baseline.generate(pert_prompt, domain=chain.domain)
-                    baseline_pert_results["RAG+CoT"][ptype] = \
-                        self._create_output_from_response(rag_cot_response, knowledge_base=None)
+                    rag_cot_response = self.rag_cot_baseline.generate(
+                        pert_prompt, domain=chain.domain
+                    )
+                    baseline_pert_results["RAG+CoT"][ptype] = (
+                        self._create_output_from_response(
+                            rag_cot_response, knowledge_base=None
+                        )
+                    )
 
             self.perturbation_outputs.append(perturbation_results)
             if use_baselines:
@@ -251,23 +283,27 @@ class ExperimentRunner:
         if use_baselines:
             self.log(f"Completed CAF + 4 baselines on {len(self.dataset)} chains")
         else:
-            self.log(f"Completed CAF evaluation on {len(self.dataset)} chains (simulation mode)")
+            self.log(
+                f"Completed CAF evaluation on {len(self.dataset)} chains (simulation mode)"
+            )
         return self.caf_outputs, self.baseline_outputs
 
-    def _create_output_from_response(self, response: str, knowledge_base=None) -> CAFOutput:
+    def _create_output_from_response(
+        self, response: str, knowledge_base=None
+    ) -> CAFOutput:
         """
         Helper to create a CAFOutput from a baseline response.
 
         Performs the same triplet extraction and verification as Vanilla baseline
         to enable fair metric comparison between all baselines.
         """
+        import time
+
         from experiments.caf_algorithm import (
             AdjudicationDecision,
             IterationLog,
-            SimulatedInferenceLayer,
-            SimulatedFVL
+            SimulatedFVL,
         )
-        import time
 
         start_time = time.time()
 
@@ -277,7 +313,9 @@ class ExperimentRunner:
         # Verify triplets against knowledge base (same as Vanilla baseline)
         if isinstance(self.caf.fvl, SimulatedFVL):
             # For simulated FVL, provide a reasonable accuracy hint
-            verification_results = self.caf.fvl.verify(triplets, knowledge_base, accuracy_hint=0.6)
+            verification_results = self.caf.fvl.verify(
+                triplets, knowledge_base, accuracy_hint=0.6
+            )
         else:
             verification_results = self.caf.fvl.verify(triplets, knowledge_base)
 
@@ -293,7 +331,7 @@ class ExperimentRunner:
             verification_results=verification_results,
             overall_score=score,
             injected_constraints=[],
-            duration_ms=duration_ms
+            duration_ms=duration_ms,
         )
 
         # Create CAFOutput matching the structure of Vanilla baseline
@@ -305,7 +343,7 @@ class ExperimentRunner:
             iteration_logs=[iteration_log],
             total_duration_ms=duration_ms,
             constraints_applied=[],
-            metadata={"baseline": True}
+            metadata={"baseline": True},
         )
 
     def compute_metrics(self) -> dict[str, ExperimentMetrics]:
@@ -321,9 +359,7 @@ class ExperimentRunner:
 
         # CAF metrics
         metrics["CAF"] = self.metrics_calc.compute_all_metrics(
-            self.dataset,
-            self.caf_outputs,
-            self.perturbation_outputs
+            self.dataset, self.caf_outputs, self.perturbation_outputs
         )
 
         # Vanilla baseline metrics (perturbation outputs enable semantic
@@ -331,7 +367,7 @@ class ExperimentRunner:
         metrics["Vanilla"] = self.metrics_calc.compute_all_metrics(
             self.dataset,
             self.baseline_outputs,
-            self.baseline_pert_outputs["Vanilla"] or None
+            self.baseline_pert_outputs["Vanilla"] or None,
         )
 
         # Additional baselines (if using real LLM)
@@ -339,27 +375,26 @@ class ExperimentRunner:
             metrics["CoT"] = self.metrics_calc.compute_all_metrics(
                 self.dataset,
                 self.cot_outputs,
-                self.baseline_pert_outputs["CoT"] or None
+                self.baseline_pert_outputs["CoT"] or None,
             )
 
             metrics["RAG"] = self.metrics_calc.compute_all_metrics(
                 self.dataset,
                 self.rag_outputs,
-                self.baseline_pert_outputs["RAG"] or None
+                self.baseline_pert_outputs["RAG"] or None,
             )
 
             metrics["RAG+CoT"] = self.metrics_calc.compute_all_metrics(
                 self.dataset,
                 self.rag_cot_outputs,
-                self.baseline_pert_outputs["RAG+CoT"] or None
+                self.baseline_pert_outputs["RAG+CoT"] or None,
             )
 
         self.log(f"Metrics computed for {len(metrics)} methods")
         return metrics
 
     def export_results(
-        self,
-        all_metrics: dict[str, ExperimentMetrics]
+        self, all_metrics: dict[str, ExperimentMetrics]
     ) -> dict[str, str]:
         """
         Export all results to files.
@@ -389,8 +424,7 @@ class ExperimentRunner:
                 "methods": list(all_metrics.keys()),
             },
             "metrics_by_method": {
-                method: metrics.to_dict()
-                for method, metrics in all_metrics.items()
+                method: metrics.to_dict() for method, metrics in all_metrics.items()
             },
         }
 
@@ -399,8 +433,8 @@ class ExperimentRunner:
             metrics_data["comparisons_to_caf"] = {}
             for method, metrics in all_metrics.items():
                 if method != "CAF":
-                    metrics_data["comparisons_to_caf"][method] = compute_baseline_comparison(
-                        all_metrics["CAF"], metrics
+                    metrics_data["comparisons_to_caf"][method] = (
+                        compute_baseline_comparison(all_metrics["CAF"], metrics)
                     )
 
         metrics_path = self.output_dir / f"experiment_metrics_{timestamp}.json"
@@ -438,32 +472,45 @@ class ExperimentRunner:
             return "% No CAF metrics available for comparison\n"
 
         methods = list(all_metrics.keys())
-        caf_metrics = all_metrics["CAF"]
 
-        latex = r"""\begin{table}[t]
+        latex = (
+            r"""\begin{table}[t]
 \centering
 \caption{Comparison of CAF with baseline methods}
 \label{tab:caf-comparison}
-\begin{tabular}{l""" + "c" * len(methods) + r"""}
+\begin{tabular}{l"""
+            + "c" * len(methods)
+            + r"""}
 \toprule
-\textbf{Metric} & """ + " & ".join([f"\\textbf{{{m}}}" for m in methods]) + r""" \\
+\textbf{Metric} & """
+            + " & ".join([f"\\textbf{{{m}}}" for m in methods])
+            + r""" \\
 \midrule
 """
+        )
 
         # Inference Depth
-        depths = " & ".join([f"{all_metrics[m].mean_inference_depth:.2f}" for m in methods])
+        depths = " & ".join(
+            [f"{all_metrics[m].mean_inference_depth:.2f}" for m in methods]
+        )
         latex += f"Inference Depth ($d$) & {depths} \\\\\n"
 
         # Contradiction Rate
-        rates = " & ".join([f"{all_metrics[m].contradiction_rate_percent:.1f}\\%" for m in methods])
+        rates = " & ".join(
+            [f"{all_metrics[m].contradiction_rate_percent:.1f}\\%" for m in methods]
+        )
         latex += f"Contradiction Rate & {rates} \\\\\n"
 
         # Entailment Accuracy
-        accs = " & ".join([f"{all_metrics[m].entailment_accuracy:.3f}" for m in methods])
+        accs = " & ".join(
+            [f"{all_metrics[m].entailment_accuracy:.3f}" for m in methods]
+        )
         latex += f"Entailment Accuracy & {accs} \\\\\n"
 
         # Semantic Invariance
-        invs = " & ".join([f"{all_metrics[m].semantic_invariance_mean:.3f}" for m in methods])
+        invs = " & ".join(
+            [f"{all_metrics[m].semantic_invariance_mean:.3f}" for m in methods]
+        )
         latex += f"Semantic Invariance & {invs} \\\\\n"
 
         latex += r"""\bottomrule
@@ -472,10 +519,7 @@ class ExperimentRunner:
 """
         return latex
 
-    def _generate_report(
-        self,
-        all_metrics: dict[str, ExperimentMetrics]
-    ) -> str:
+    def _generate_report(self, all_metrics: dict[str, ExperimentMetrics]) -> str:
         """Generate human-readable experiment report for all methods."""
         if not all_metrics:
             return "No metrics available for report generation."
@@ -484,30 +528,30 @@ class ExperimentRunner:
         methods = list(all_metrics.keys())
 
         report = f"""
-{'='*70}
+{"=" * 70}
 CAF MULTI-METHOD COMPARISON REPORT
-{'='*70}
-Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+{"=" * 70}
+Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 Seed: {self.seed}
 
 DATASET SUMMARY
 ---------------
 Total Chains: {len(self.dataset)}
 Total Perturbations: {sum(len(c.perturbations) for c in self.dataset)}
-Domains: {', '.join(set(c.domain for c in self.dataset))}
+Domains: {", ".join(set(c.domain for c in self.dataset))}
 Depth Range: {min(c.depth for c in self.dataset)} - {max(c.depth for c in self.dataset)}
 Chains with Contradictions: {sum(1 for c in self.dataset if c.injected_contradictions)}
 
-{'='*70}
+{"=" * 70}
 METHODS EVALUATED
-{'='*70}
+{"=" * 70}
 """
         for i, method in enumerate(methods, 1):
             report += f"{i}. {method}\n"
 
-        report += f"\n{'='*70}\n"
+        report += f"\n{'=' * 70}\n"
         report += "PRIMARY METRICS - ALL METHODS\n"
-        report += f"{'='*70}\n\n"
+        report += f"{'=' * 70}\n\n"
 
         # Create comparison table
         col_width = 12
@@ -526,7 +570,9 @@ METHODS EVALUATED
         # Contradiction Rate
         row = f"{'Contradiction Rate (%)':<25}"
         for method in methods:
-            row += f"| {all_metrics[method].contradiction_rate_percent:>{col_width}.1f} "
+            row += (
+                f"| {all_metrics[method].contradiction_rate_percent:>{col_width}.1f} "
+            )
         report += row + "\n"
 
         # Entailment Accuracy
@@ -543,13 +589,15 @@ METHODS EVALUATED
 
         # Improvements over baselines (if CAF exists)
         if caf_metrics and len(methods) > 1:
-            report += f"\n{'='*70}\n"
+            report += f"\n{'=' * 70}\n"
             report += "CAF IMPROVEMENTS OVER BASELINES\n"
-            report += f"{'='*70}\n\n"
+            report += f"{'=' * 70}\n\n"
 
             for method in methods:
                 if method != "CAF":
-                    comparison = compute_baseline_comparison(caf_metrics, all_metrics[method])
+                    comparison = compute_baseline_comparison(
+                        caf_metrics, all_metrics[method]
+                    )
                     report += f"\nCAF vs {method}:\n"
                     report += f"  Inference Depth: +{comparison['inference_depth']['improvement_pct']:.1f}%\n"
                     report += f"  Contradiction Rate: {comparison['contradiction_rate']['delta']:.1f}pp reduction\n"
@@ -558,39 +606,41 @@ METHODS EVALUATED
 
         # Statistical details for CAF
         if caf_metrics:
-            report += f"\n{'='*70}\n"
+            report += f"\n{'=' * 70}\n"
             report += "CAF STATISTICAL DETAILS\n"
-            report += f"{'='*70}\n\n"
+            report += f"{'=' * 70}\n\n"
             report += f"  - Inference Depth: {caf_metrics.mean_inference_depth:.2f} ± {caf_metrics.std_inference_depth:.2f}\n"
             report += f"  - 95% CI for Entailment: [{caf_metrics.confidence_interval_95[0]:.4f}, {caf_metrics.confidence_interval_95[1]:.4f}]\n"
 
             # Per-domain breakdown
-            report += f"\n{'='*70}\n"
+            report += f"\n{'=' * 70}\n"
             report += "PER-DOMAIN BREAKDOWN (CAF)\n"
-            report += f"{'='*70}\n"
+            report += f"{'=' * 70}\n"
 
             for domain, metrics in caf_metrics.metrics_by_domain.items():
                 report += f"\n{domain.upper()}:\n"
                 report += f"  Mean Depth: {metrics['mean_depth']:.2f}\n"
-                report += f"  Contradiction Rate: {metrics['contradiction_rate']:.1f}%\n"
-                report += f"  Entailment Accuracy: {metrics['entailment_accuracy']:.4f}\n"
+                report += (
+                    f"  Contradiction Rate: {metrics['contradiction_rate']:.1f}%\n"
+                )
+                report += (
+                    f"  Entailment Accuracy: {metrics['entailment_accuracy']:.4f}\n"
+                )
 
         report += f"""
-{'='*70}
+{"=" * 70}
 ALGORITHM PSEUDOCODE
-{'='*70}
+{"=" * 70}
 {get_algorithm_pseudocode()}
 
-{'='*70}
+{"=" * 70}
 END OF REPORT
-{'='*70}
+{"=" * 70}
 """
         return report
 
     def run_full_experiment(
-        self,
-        num_chains: int = 75,
-        perturbations_per_chain: int = 3
+        self, num_chains: int = 75, perturbations_per_chain: int = 3
     ) -> dict[str, Any]:
         """
         Run the complete experiment pipeline.
@@ -631,27 +681,39 @@ END OF REPORT
 
         if "CAF" in all_metrics:
             caf_metrics = all_metrics["CAF"]
-            print(f"\nCAF Results:")
+            print("\nCAF Results:")
             print(f"  Inference Depth: {caf_metrics.mean_inference_depth:.2f}")
-            print(f"  Contradiction Rate: {caf_metrics.contradiction_rate_percent:.1f}%")
+            print(
+                f"  Contradiction Rate: {caf_metrics.contradiction_rate_percent:.1f}%"
+            )
             print(f"  Entailment Accuracy: {caf_metrics.entailment_accuracy:.4f}")
             print(f"  Semantic Invariance: {caf_metrics.semantic_invariance_mean:.4f}")
 
             # Show improvements over each baseline
-            print(f"\nCAF Improvements:")
+            print("\nCAF Improvements:")
             for method in all_metrics:
                 if method != "CAF":
-                    comparison = compute_baseline_comparison(caf_metrics, all_metrics[method])
+                    comparison = compute_baseline_comparison(
+                        caf_metrics, all_metrics[method]
+                    )
                     print(f"  vs {method}:")
-                    print(f"    Inference Depth: +{comparison['inference_depth']['improvement_pct']:.1f}%")
-                    print(f"    Contradiction Rate: -{comparison['contradiction_rate']['delta']:.1f}pp")
-                    print(f"    Entailment Accuracy: +{comparison['entailment_accuracy']['improvement_pct']:.1f}%")
+                    print(
+                        f"    Inference Depth: +{comparison['inference_depth']['improvement_pct']:.1f}%"
+                    )
+                    print(
+                        f"    Contradiction Rate: -{comparison['contradiction_rate']['delta']:.1f}pp"
+                    )
+                    print(
+                        f"    Entailment Accuracy: +{comparison['entailment_accuracy']['improvement_pct']:.1f}%"
+                    )
 
         print(f"\nResults exported to: {self.output_dir}")
         print("=" * 60)
 
         return {
-            "all_metrics": {method: metrics.to_dict() for method, metrics in all_metrics.items()},
+            "all_metrics": {
+                method: metrics.to_dict() for method, metrics in all_metrics.items()
+            },
             "exported_files": exported_files,
             "execution_time_seconds": total_time,
         }
@@ -659,92 +721,77 @@ END OF REPORT
 
 def main():
     """Main entry point for experiment execution."""
-    parser = argparse.ArgumentParser(
-        description="Run CAF full experiment for paper"
+    parser = argparse.ArgumentParser(description="Run CAF full experiment for paper")
+    parser.add_argument(
+        "--output-dir", default="experiments/results", help="Directory for output files"
     )
     parser.add_argument(
-        "--output-dir",
-        default="experiments/results",
-        help="Directory for output files"
+        "--num-chains", type=int, default=75, help="Number of causal chains (50-100)"
     )
     parser.add_argument(
-        "--num-chains",
-        type=int,
-        default=75,
-        help="Number of causal chains (50-100)"
+        "--perturbations", type=int, default=3, help="Perturbations per chain (2-3)"
     )
     parser.add_argument(
-        "--perturbations",
-        type=int,
-        default=3,
-        help="Perturbations per chain (2-3)"
+        "--seed", type=int, default=42, help="Random seed for reproducibility"
     )
     parser.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-        help="Random seed for reproducibility"
-    )
-    parser.add_argument(
-        "--quiet",
-        action="store_true",
-        help="Suppress progress messages"
+        "--quiet", action="store_true", help="Suppress progress messages"
     )
 
     # LLM Configuration
     parser.add_argument(
         "--use-llm",
         action="store_true",
-        help="Use real LLM instead of simulation (requires GPU)"
+        help="Use real LLM instead of simulation (requires GPU)",
     )
     parser.add_argument(
         "--llm-model",
         default="7b",
         help="Model alias (7b, 8b, 13b, tiny, phi2, mistral, qwen7b, qwen14b, qwen3-14b) "
-             "or a full HuggingFace model id such as Qwen/Qwen2.5-7B-Instruct"
+        "or a full HuggingFace model id such as Qwen/Qwen2.5-7B-Instruct",
     )
     parser.add_argument(
-        "--llm-4bit",
-        action="store_true",
-        help="Use 4-bit quantization (saves memory)"
+        "--llm-4bit", action="store_true", help="Use 4-bit quantization (saves memory)"
     )
     parser.add_argument(
-        "--llm-8bit",
-        action="store_true",
-        help="Use 8-bit quantization"
+        "--llm-8bit", action="store_true", help="Use 8-bit quantization"
     )
 
     # SPARQL/FVL Configuration (NEW)
     parser.add_argument(
         "--use-real-sparql",
         action="store_true",
-        help="Use real SPARQL verification instead of simulation (requires running triplestore)"
+        help="Use real SPARQL verification instead of simulation (requires running triplestore)",
     )
     parser.add_argument(
         "--sparql-endpoint",
-        default="http://localhost:3030/conceptnet/query",
-        help="SPARQL endpoint URL for verification"
+        default="http://localhost:3030/dataset/query",
+        help="SPARQL endpoint URL for verification",
     )
     parser.add_argument(
-        "--entity-th",
+        "--entity-threshold",
         type=float,
         default=0.7,
-        help="Fuzzy matching threshold for entity linking (0-1)"
+        help="Fuzzy matching threshold for entity linking (0-1)",
     )
     parser.add_argument(
         "--disable-fuzzy-match",
         action="store_true",
-        help="Disable fuzzy entity matching (exact matches only)"
+        help="Disable fuzzy entity matching (exact matches only)",
     )
 
     args = parser.parse_args()
 
     # Validate parameters
     if not 50 <= args.num_chains <= 100:
-        print(f"Warning: num_chains={args.num_chains} is outside recommended range [50, 100]")
+        print(
+            f"Warning: num_chains={args.num_chains} is outside recommended range [50, 100]"
+        )
 
     if not 2 <= args.perturbations <= 3:
-        print(f"Warning: perturbations={args.perturbations} is outside recommended range [2, 3]")
+        print(
+            f"Warning: perturbations={args.perturbations} is outside recommended range [2, 3]"
+        )
 
     # Initialize inference layer
     inference_layer = None
@@ -758,7 +805,7 @@ def main():
             model_size=args.llm_model,
             use_4bit=args.llm_4bit,
             use_8bit=args.llm_8bit,
-            open_source=True
+            open_source=True,
         )
         print("LLM loaded successfully!")
     else:
@@ -776,11 +823,15 @@ def main():
             verification_layer = KnowledgeBaseFVL(
                 sparql_endpoint=args.sparql_endpoint,
                 entity_threshold=args.entity_threshold,
-                enable_fuzzy_match=not args.disable_fuzzy_match
+                enable_fuzzy_match=not args.disable_fuzzy_match,
             )
-            print(f"Knowledge Base FVL initialized with endpoint: {args.sparql_endpoint}")
+            print(
+                f"Knowledge Base FVL initialized with endpoint: {args.sparql_endpoint}"
+            )
             print(f"  Entity threshold: {args.entity_threshold}")
-            print(f"  Fuzzy matching: {'disabled' if args.disable_fuzzy_match else 'enabled'}")
+            print(
+                f"  Fuzzy matching: {'disabled' if args.disable_fuzzy_match else 'enabled'}"
+            )
 
             # Test connection
             print("\nTesting SPARQL endpoint connection...")
@@ -811,12 +862,11 @@ def main():
         seed=args.seed,
         verbose=not args.quiet,
         inference_layer=inference_layer,
-        verification_layer=verification_layer  # Pass Real FVL if enabled
+        verification_layer=verification_layer,  # Pass Real FVL if enabled
     )
 
     results = runner.run_full_experiment(
-        num_chains=args.num_chains,
-        perturbations_per_chain=args.perturbations
+        num_chains=args.num_chains, perturbations_per_chain=args.perturbations
     )
 
     return results

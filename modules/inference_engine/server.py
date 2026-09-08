@@ -2,23 +2,20 @@
 Inference Engine standalone server.
 Can be deployed separately for GPU isolation.
 """
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-import asyncio
-import sys
-from pathlib import Path
+
 from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, HTTPException
 from loguru import logger
+from pydantic import BaseModel
 
-# framework1/, for utils.*
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-
-from .engine import InferenceEngine, GenerationConfig
 from utils.config import get_settings
 
+from .engine import GenerationConfig, InferenceEngine
 
 # Global engine instance
 engine: InferenceEngine | None = None
+
 
 class GenerateRequest(BaseModel):
     prompt: str
@@ -27,6 +24,7 @@ class GenerateRequest(BaseModel):
     top_p: float = 0.9
     session_id: str | None = None
     constraints: list[str] | None = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -41,17 +39,16 @@ async def lifespan(app: FastAPI):
         model_name=settings.model_name,
         tensor_parallel_size=settings.tensor_parallel_size,
         gpu_memory_utilization=settings.gpu_memory_utilization,
-        use_vllm=settings.use_vllm
+        use_vllm=settings.use_vllm,
+        load_in_4bit=settings.load_in_4bit,
+        load_in_8bit=settings.load_in_8bit,
     )
 
     logger.info("Inference Engine ready")
     yield
 
-app = FastAPI(
-    title="CAF Inference Engine", 
-    version="1.0.10",
-    lifespan=lifespan
-)
+
+app = FastAPI(title="CAF Inference Engine", version="1.0.10", lifespan=lifespan)
 
 
 @app.post("/generate")
@@ -63,14 +60,12 @@ async def generate(request: GenerateRequest):
     config = GenerationConfig(
         max_tokens=request.max_tokens,
         temperature=request.temperature,
-        top_p=request.top_p
+        top_p=request.top_p,
     )
 
     try:
         result = await engine.generate(
-            prompt=request.prompt,
-            config=config,
-            constraints=request.constraints
+            prompt=request.prompt, config=config, constraints=request.constraints
         )
         return result
     except Exception as e:
@@ -98,4 +93,5 @@ async def ready():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8001)

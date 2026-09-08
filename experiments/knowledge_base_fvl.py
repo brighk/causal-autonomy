@@ -14,24 +14,23 @@ Requirements:
     python -m spacy download en_core_web_sm
 """
 
-import re
+import logging
 import time
-from typing import Any
 from dataclasses import dataclass
 from difflib import SequenceMatcher
-from functools import lru_cache
-import logging
+from typing import Any
 
 try:
-    from SPARQLWrapper import SPARQLWrapper, JSON, SPARQLExceptions
+    from SPARQLWrapper import JSON, SPARQLWrapper
 except ImportError:
     raise ImportError("Install SPARQLWrapper: pip install SPARQLWrapper")
 
 try:
     import spacy
-    from spacy.language import Language
 except ImportError:
-    raise ImportError("Install spacy: pip install spacy && python -m spacy download en_core_web_sm")
+    raise ImportError(
+        "Install spacy: pip install spacy && python -m spacy download en_core_web_sm"
+    )
 
 try:
     from fuzzywuzzy import fuzz
@@ -43,7 +42,7 @@ from experiments.caf_algorithm import (
     FormalVerificationLayer,
     RDFTriplet,
     VerificationResult,
-    VerificationStatus
+    VerificationStatus,
 )
 
 # Configure logging
@@ -53,6 +52,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class EntityMapping:
     """Entity text mapped to KB URI with confidence."""
+
     text: str
     uri: str
     confidence: float
@@ -62,6 +62,7 @@ class EntityMapping:
 @dataclass
 class SPARQLQueryResult:
     """SPARQL query execution result."""
+
     success: bool
     result: Any
     latency_ms: float
@@ -94,7 +95,7 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
         fuzzy_match_limit: int = 10,
         cache_size: int = 1000,
         query_timeout: int = 10,
-        spacy_model: str = "en_core_web_sm"
+        spacy_model: str = "en_core_web_sm",
     ):
         """
         Initialize Knowledge Base FVL.
@@ -124,7 +125,9 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
             self.nlp = spacy.load(spacy_model)
             logger.info(f"Loaded spaCy model: {spacy_model}")
         except OSError:
-            logger.error(f"spaCy model '{spacy_model}' not found. Run: python -m spacy download {spacy_model}")
+            logger.error(
+                f"spaCy model '{spacy_model}' not found. Run: python -m spacy download {spacy_model}"
+            )
             raise
 
         # Entity URI cache (in-memory)
@@ -139,7 +142,7 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
             "exact_matches": 0,
             "fuzzy_matches": 0,
             "failed_links": 0,
-            "total_query_time_ms": 0.0
+            "total_query_time_ms": 0.0,
         }
 
         logger.info(f"KnowledgeBaseFVL initialized with endpoint: {sparql_endpoint}")
@@ -176,8 +179,11 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
                 verb = subj.head
 
                 # Find objects (direct object, prepositional object, attribute)
-                objects = [child for child in verb.children
-                          if child.dep_ in ("dobj", "pobj", "attr", "oprd")]
+                objects = [
+                    child
+                    for child in verb.children
+                    if child.dep_ in ("dobj", "pobj", "attr", "oprd")
+                ]
 
                 # Also check for compound predicates
                 aux_verbs = [child for child in verb.children if child.dep_ == "aux"]
@@ -210,7 +216,7 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
                         predicate=predicate.lower(),
                         obj=obj_text.lower(),
                         confidence=0.8,  # Could use dependency parse confidence
-                        source_span=sent.text
+                        source_span=sent.text,
                     )
                     triplets.append(triplet)
 
@@ -247,7 +253,8 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
         self,
         triplets: list[RDFTriplet],
         knowledge_base: Any = None,  # Not used, kept for interface compatibility
-        query: str | None = None  # Not used here; consumed by subclasses (e.g. KnowledgeBaseFVLWithIntervention)
+        query: str
+        | None = None,  # Not used here; consumed by subclasses (e.g. KnowledgeBaseFVLWithIntervention)
     ) -> list[VerificationResult]:
         """
         Verify triplets against knowledge base via SPARQL.
@@ -293,7 +300,7 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
                 contradiction_found=False,
                 supporting_facts=[],
                 contradicting_facts=[],
-                confidence_score=0.0
+                confidence_score=0.0,
             )
 
         # `parse` prefixes the predicate with "not_" for a negated claim
@@ -315,7 +322,7 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
                 status=VerificationStatus.FAILED,
                 kb_support=False,
                 contradiction_found=False,
-                confidence_score=0.0
+                confidence_score=0.0,
             )
 
         # Step 3: Interpret results
@@ -331,8 +338,10 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
                     status=VerificationStatus.CONTRADICTION,
                     kb_support=False,
                     contradiction_found=True,
-                    contradicting_facts=[f"{subj_mapping.uri} -> {obj_mapping.uri} found in KB"],
-                    confidence_score=0.0
+                    contradicting_facts=[
+                        f"{subj_mapping.uri} -> {obj_mapping.uri} found in KB"
+                    ],
+                    confidence_score=0.0,
                 )
             return VerificationResult(
                 triplet=triplet,
@@ -342,7 +351,7 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
                 supporting_facts=[
                     f"no {base_predicate} edge {subj_mapping.uri} -> {obj_mapping.uri} in KB"
                 ],
-                confidence_score=min(subj_mapping.confidence, obj_mapping.confidence)
+                confidence_score=min(subj_mapping.confidence, obj_mapping.confidence),
             )
 
         if positive_relation_found:
@@ -352,14 +361,12 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
                 kb_support=True,
                 contradiction_found=False,
                 supporting_facts=[f"{subj_mapping.uri} -> {obj_mapping.uri}"],
-                confidence_score=min(subj_mapping.confidence, obj_mapping.confidence)
+                confidence_score=min(subj_mapping.confidence, obj_mapping.confidence),
             )
 
         # Step 4: Check for contradiction
         contradiction_found = self._check_contradiction(
-            subj_mapping.uri,
-            base_predicate,
-            obj_mapping.uri
+            subj_mapping.uri, base_predicate, obj_mapping.uri
         )
 
         if contradiction_found:
@@ -369,19 +376,21 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
                 kb_support=False,
                 contradiction_found=True,
                 contradicting_facts=[f"Negation of {triplet} found in KB"],
-                confidence_score=0.0
+                confidence_score=0.0,
             )
 
         # Step 5: Try fuzzy match for partial verification
         if self.enable_fuzzy_match:
-            fuzzy_score = self._fuzzy_verify(subj_mapping.uri, base_predicate, obj_mapping.uri)
+            fuzzy_score = self._fuzzy_verify(
+                subj_mapping.uri, base_predicate, obj_mapping.uri
+            )
             if fuzzy_score > 0.5:
                 return VerificationResult(
                     triplet=triplet,
                     status=VerificationStatus.PARTIAL,
                     kb_support=True,
                     contradiction_found=False,
-                    confidence_score=fuzzy_score
+                    confidence_score=fuzzy_score,
                 )
 
         # Default: Failed verification
@@ -390,7 +399,7 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
             status=VerificationStatus.FAILED,
             kb_support=False,
             contradiction_found=False,
-            confidence_score=0.0
+            confidence_score=0.0,
         )
 
     def _split_negation(self, predicate: str) -> tuple[bool, str]:
@@ -398,7 +407,7 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
         (is_negated, base_predicate), so KB predicate mapping and query
         construction always operate on the plain verb."""
         if predicate.startswith("not_"):
-            return True, predicate[len("not_"):]
+            return True, predicate[len("not_") :]
         return False, predicate
 
     def _link_entity(self, entity_text: str) -> EntityMapping | None:
@@ -433,10 +442,7 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
         if exact_uri:
             self.stats["exact_matches"] += 1
             mapping = EntityMapping(
-                text=entity_text,
-                uri=exact_uri,
-                confidence=1.0,
-                method="exact"
+                text=entity_text, uri=exact_uri, confidence=1.0, method="exact"
             )
             self._cache_entity(entity_text, mapping)
             return mapping
@@ -448,10 +454,7 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
                 self.stats["fuzzy_matches"] += 1
                 uri, confidence = fuzzy_result
                 mapping = EntityMapping(
-                    text=entity_text,
-                    uri=uri,
-                    confidence=confidence,
-                    method="fuzzy"
+                    text=entity_text, uri=uri, confidence=confidence, method="fuzzy"
                 )
                 self._cache_entity(entity_text, mapping)
                 return mapping
@@ -553,7 +556,9 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
                 best_uri = binding["uri"]["value"]
 
         if best_uri:
-            logger.debug(f"Fuzzy match: {entity_text} -> {best_uri} (score: {best_score:.2f})")
+            logger.debug(
+                f"Fuzzy match: {entity_text} -> {best_uri} (score: {best_score:.2f})"
+            )
             return (best_uri, best_score)
 
         return None
@@ -579,8 +584,10 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
 
         best_partial = 0.0
         for i in range(len(longer) - len(shorter) + 1):
-            window = longer[i:i + len(shorter)]
-            best_partial = max(best_partial, SequenceMatcher(None, shorter, window).ratio())
+            window = longer[i : i + len(shorter)]
+            best_partial = max(
+                best_partial, SequenceMatcher(None, shorter, window).ratio()
+            )
         return max(ratio, best_partial)
 
     def _cache_entity(self, entity_text: str, mapping: EntityMapping):
@@ -591,7 +598,9 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
 
         self.entity_cache[entity_text] = mapping
 
-    def _build_ask_query(self, subject_uri: str, predicate: str, object_uri: str) -> str:
+    def _build_ask_query(
+        self, subject_uri: str, predicate: str, object_uri: str
+    ) -> str:
         """
         Construct SPARQL ASK query for triplet verification.
 
@@ -654,7 +663,9 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
         # Default: return normalized predicate
         return predicate.title().replace("_", "")
 
-    def _check_contradiction(self, subject_uri: str, predicate: str, object_uri: str) -> bool:
+    def _check_contradiction(
+        self, subject_uri: str, predicate: str, object_uri: str
+    ) -> bool:
         """
         Check if KB contains a contradiction to the triplet.
 
@@ -719,21 +730,14 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
             latency_ms = (time.time() - start_time) * 1000
             self.stats["total_query_time_ms"] += latency_ms
 
-            return SPARQLQueryResult(
-                success=True,
-                result=result,
-                latency_ms=latency_ms
-            )
+            return SPARQLQueryResult(success=True, result=result, latency_ms=latency_ms)
 
         except Exception as e:
             latency_ms = (time.time() - start_time) * 1000
             logger.debug(f"SPARQL query failed: {e}")
 
             return SPARQLQueryResult(
-                success=False,
-                result=None,
-                latency_ms=latency_ms,
-                error=str(e)
+                success=False, result=None, latency_ms=latency_ms, error=str(e)
             )
 
     def _sparql_string_literal(self, text: str) -> str:
@@ -750,25 +754,30 @@ class KnowledgeBaseFVL(FormalVerificationLayer):
         """Return verification statistics."""
         avg_query_time = (
             self.stats["total_query_time_ms"] / self.stats["queries_executed"]
-            if self.stats["queries_executed"] > 0 else 0
+            if self.stats["queries_executed"] > 0
+            else 0
         )
 
         cache_hit_rate = (
-            self.stats["cache_hits"] / (self.stats["cache_hits"] + self.stats["cache_misses"])
-            if (self.stats["cache_hits"] + self.stats["cache_misses"]) > 0 else 0
+            self.stats["cache_hits"]
+            / (self.stats["cache_hits"] + self.stats["cache_misses"])
+            if (self.stats["cache_hits"] + self.stats["cache_misses"]) > 0
+            else 0
         )
 
         return {
             **self.stats,
             "avg_query_time_ms": avg_query_time,
             "cache_hit_rate": cache_hit_rate,
-            "cache_size": len(self.entity_cache)
+            "cache_size": len(self.entity_cache),
         }
 
     def reset_stats(self):
         """Reset statistics counters."""
         for key in self.stats:
-            self.stats[key] = 0 if isinstance(self.stats[key], (int, float)) else self.stats[key]
+            self.stats[key] = (
+                0 if isinstance(self.stats[key], (int, float)) else self.stats[key]
+            )
 
 
 def test_knowledge_base_fvl():
@@ -779,9 +788,9 @@ def test_knowledge_base_fvl():
 
     # Initialize (requires running triplestore)
     fvl = KnowledgeBaseFVL(
-        sparql_endpoint="http://localhost:3030/conceptnet/query",
+        sparql_endpoint="http://localhost:3030/dataset/query",
         entity_threshold=0.7,
-        enable_fuzzy_match=True
+        enable_fuzzy_match=True,
     )
 
     # Test parsing
@@ -803,9 +812,11 @@ def test_knowledge_base_fvl():
     print("\nVerifying triplets...")
     try:
         results = fvl.verify(triplets)
-        print(f"\nVerification results:")
+        print("\nVerification results:")
         for i, r in enumerate(results, 1):
-            print(f"  {i}. {r.triplet.subject} -> {r.status.value} (confidence: {r.confidence_score:.2f})")
+            print(
+                f"  {i}. {r.triplet.subject} -> {r.status.value} (confidence: {r.confidence_score:.2f})"
+            )
     except Exception as e:
         print(f"  Verification failed (triplestore not running?): {e}")
 
@@ -823,7 +834,7 @@ if __name__ == "__main__":
     # Configure logging
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
     test_knowledge_base_fvl()
