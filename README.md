@@ -9,7 +9,7 @@ CAF (Causal Autonomy Framework) verifies an LLM's output against a knowledge bas
 - `experiments/` - the standalone `CAFLoop` algorithm (`caf_algorithm.py`), a SPARQL-backed verification layer (`knowledge_base_fvl.py`'s `KnowledgeBaseFVL`, using spaCy for triplet parsing), CounterBench evaluation harnesses, and baselines (CoT, RAG).
 - `common/llm_integration.py` - backend-agnostic LLM wrapper shared by every entry point (local HuggingFace models or a running Ollama server).
 
-There are two ways to drive this: the FastAPI service (`api/main.py`, needs a separate inference-engine server too - see `modules/inference_engine/`), or `CAFLoop` directly in a script, which only needs an `InferenceLayer` and a `FormalVerificationLayer` - see [Running a query](#running-a-query) below for the minimal path.
+There are three ways to drive this: the `caval` library (`caval/`, a thin wrapper around `api/`+`modules/` - see [Install as a library](#install-as-a-library) below), the FastAPI service directly (`api/main.py`, needs a separate inference-engine server too - see `modules/inference_engine/`), or `CAFLoop` in a script, which only needs an `InferenceLayer` and a `FormalVerificationLayer` - see [Running a query](#running-a-query) below for that minimal path.
 
 ## Setup
 
@@ -18,6 +18,31 @@ uv sync
 uv run python -m spacy download en_core_web_sm   # triplet parsing (modules/semantic_parser, KnowledgeBaseFVL)
 ```
 
+
+## Development checks
+
+Install the development tools and enable automatic checks before each commit:
+
+```bash
+uv sync --locked
+uv run --no-sync prek install
+```
+
+For a tooling-only checkout without the ML dependencies, use
+`uv sync --locked --only-dev --inexact` instead of `uv sync --locked`.
+Run `prek install` once per clone. The hooks use the Ruff version in `uv.lock`.
+
+```bash
+uv run --no-sync prek run --all-files  # check and fix the entire repo
+uv run --no-sync ruff check .         # lint without changing files
+uv run --no-sync ruff format --check .
+```
+
+prek runs Ruff linting, import sorting, and formatting, plus checks for merge
+conflicts, YAML/TOML syntax, files larger than 1 MiB, trailing whitespace, and
+missing final newlines. Normal commits check staged files only. If hooks fix
+files, review and stage those changes before retrying the commit. Existing files
+may need cleanup the first time they are checked.
 
 ## Running Fuseki
 
@@ -62,6 +87,37 @@ curl -X POST http://localhost:3030/dataset/update \
   -H "Content-Type: application/sparql-update" \
   --data 'DELETE WHERE { ?s ?p ?o }'
 ```
+
+## Install as a library
+
+`caval` (`caval/`) wraps the `api/`+`modules/` pipeline as a plain importable
+class - no FastAPI service to run yourself, but the LLM still runs as its
+own background process (for GPU isolation) and Fuseki still runs via
+docker-compose. Three things running, few lines of code:
+
+```bash
+# 1. Fuseki
+FUSEKI_ADMIN_PASSWORD=<pick-something> docker compose -f deployment/docker-compose.yml up -d
+
+# 2. The LLM, in a separate terminal
+uv run python -m modules.inference_engine.server
+```
+
+```python
+# 3. Your script
+from caval import Caval
+
+caf = Caval()  # zero-config: reads .env, same as the FastAPI gateway's Settings()
+result = caf.ask("Does high cpu usage cause increased response time?")
+print(result.text, result.verification_status.is_valid)
+```
+
+An async `caf.aask(...)` is also available for embedding in an already-async
+app (e.g. a FastAPI route) - `caf.ask(...)` can't be called from inside a
+running event loop. See `examples/quickstart.py` and
+`examples/quickstart_async.py` for runnable versions of both. `caval` is
+built on the `api/`+`modules/` implementation specifically, not the
+`experiments/`+`common/` script path described below.
 
 ## Running a query
 
