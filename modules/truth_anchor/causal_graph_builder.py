@@ -14,7 +14,7 @@ import asyncio
 from loguru import logger
 from SPARQLWrapper import JSON, SPARQLWrapper
 
-from experiments.intervention_calculus import CausalGraph, normalize_node_id
+from modules.causal_reasoning import CausalGraph, normalize_node_id
 
 # Predicate substrings treated as causal when walking the KB graph.
 # Kept in sync by hand with modules/causal_validator/validator.py and

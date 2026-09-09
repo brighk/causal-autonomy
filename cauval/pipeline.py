@@ -13,7 +13,7 @@ Pearl's causal hierarchy routing:
 from loguru import logger
 
 from api.models import FinalResponse, InferenceRequest, VerificationResult
-from experiments.intervention_calculus import (
+from modules.causal_reasoning import (
     counterfactual_reasoning_with_graph,
     parse_counterfactual_query,
 )
