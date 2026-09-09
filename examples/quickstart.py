@@ -1,5 +1,5 @@
 """
-Quickstart: minimal end-to-end `caval` usage (sync).
+Quickstart: minimal end-to-end `cauval` usage (sync).
 
 Before running, start the two background services this depends on:
 
@@ -17,11 +17,11 @@ Run with:
     uv run python -m examples.quickstart
 """
 
-from caval import Caval, VerificationFailedError
+from cauval import Cauval, VerificationFailedError
 
 
 def main() -> None:
-    with Caval() as caf:
+    with Cauval() as caf:
         prompt = "Does high cpu usage cause increased response time?"
         try:
             result = caf.ask(prompt)

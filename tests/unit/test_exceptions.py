@@ -1,6 +1,6 @@
-"""Pure-logic tests for caval.exceptions."""
+"""Pure-logic tests for cauval.exceptions."""
 
-from caval.exceptions import VerificationFailedError
+from cauval.exceptions import VerificationFailedError
 
 
 def test_verification_failed_error_attrs_and_message():

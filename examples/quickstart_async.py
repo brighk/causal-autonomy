@@ -1,5 +1,5 @@
 """
-Quickstart: minimal end-to-end `caval` usage (async).
+Quickstart: minimal end-to-end `cauval` usage (async).
 
 Same prerequisites as examples/quickstart.py (Fuseki + the inference engine
 must already be running). Use .aask() instead of .ask() when embedding
@@ -12,11 +12,11 @@ Run with:
 
 import asyncio
 
-from caval import Caval, VerificationFailedError
+from cauval import Cauval, VerificationFailedError
 
 
 async def main() -> None:
-    async with Caval() as caf:
+    async with Cauval() as caf:
         prompt = "Does high cpu usage cause increased response time?"
         try:
             result = await caf.aask(prompt)

@@ -134,7 +134,7 @@ wheels = [
 ]
 
 [[package]]
-name = "caval"
+name = "cauval"
 version = "0.1.1"
 source = { editable = "." }
 dependencies = [

@@ -1,9 +1,9 @@
-# CAVAL — Causal Autonomy Verification And vaLidation
+# CAUVAL — Causal AUtonomous Verification And vaLidation
 
 [![CI](https://github.com/brighk/causal_autonomy/actions/workflows/ci.yml/badge.svg)](https://github.com/brighk/causal_autonomy/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/caval.svg)](https://pypi.org/project/caval/)
+[![PyPI](https://img.shields.io/pypi/v/cauval.svg)](https://pypi.org/project/cauval/)
 
-A causal fact-checker for LLMs. CAVAL prevents language models from hallucinating causal claims by grounding every causal assertion against a formal knowledge base — and answers interventional and counterfactual questions using do-calculus on that knowledge base instead of the model's statistical priors.
+A causal fact-checker for LLMs. CAUVAL prevents language models from hallucinating causal claims by grounding every causal assertion against a formal knowledge base — and answers interventional and counterfactual questions using do-calculus on that knowledge base instead of the model's statistical priors.
 
 ---
 
@@ -21,13 +21,13 @@ This is not a prompting problem. It is a structural one. Judea Pearl's causal hi
 
 An LLM operates natively at Level 1. It can approximate Levels 2 and 3 in easy cases, but it has no guarantee of correctness and no mechanism for abstention when it doesn't know.
 
-CAVAL addresses this by keeping the LLM where it belongs — generating and reformulating text — and handing Levels 2 and 3 to formal causal machinery.
+CAUVAL addresses this by keeping the LLM where it belongs — generating and reformulating text — and handing Levels 2 and 3 to formal causal machinery.
 
 ---
 
 ## How it works
 
-CAVAL routes every query to the appropriate reasoning mechanism based on its type:
+CAUVAL routes every query to the appropriate reasoning mechanism based on its type:
 
 ```
 Query
@@ -47,7 +47,7 @@ Query
 
 **Level 1 (factual):** the LLM generates a candidate answer. The semantic parser extracts causal assertions as RDF triplets. The truth anchor queries the knowledge base via SPARQL. If a triplet contradicts the KB, the contradiction is fed back as a constraint and the LLM regenerates. This loop continues until the response is fully grounded or the iteration limit is reached.
 
-**Level 2/3 (interventional and counterfactual):** the LLM is bypassed entirely. CAVAL links the query's entities to KB nodes, walks causal-predicate edges outward via SPARQL traversal to build a local causal graph, applies Pearl's do-calculus (graph surgery: remove incoming edges to the intervened node, propagate through descendants), and returns the formal result. The answer comes from the KB structure, not from the model's priors.
+**Level 2/3 (interventional and counterfactual):** the LLM is bypassed entirely. CAUVAL links the query's entities to KB nodes, walks causal-predicate edges outward via SPARQL traversal to build a local causal graph, applies Pearl's do-calculus (graph surgery: remove incoming edges to the intervened node, propagate through descendants), and returns the formal result. The answer comes from the KB structure, not from the model's priors.
 
 The response always carries a `causal_level` field (1, 2, or 3) so callers know which mechanism answered it.
 
@@ -56,7 +56,7 @@ The response always carries a `causal_level` field (1, 2, or 3) so callers know 
 ## Quick start
 
 ```bash
-pip install caval
+pip install cauval
 python -m spacy download en_core_web_sm   # one-time — see Setup
 ```
 
@@ -71,9 +71,9 @@ uv run python -m modules.inference_engine.server
 ```
 
 ```python
-from caval import Caval
+from cauval import Cauval
 
-caf = Caval()
+caf = Cauval()
 
 # Level 1 — factual query: LLM answers, SPARQL verifies
 result = caf.ask("Does high CPU usage cause increased response time?")
@@ -98,7 +98,7 @@ result = await caf.aask("Does rain cause road slipperiness?")
 
 ## What it is for
 
-CAVAL is useful in any domain where you need causal reasoning you can trust and trace — where "the model said so" is not an acceptable justification.
+CAUVAL is useful in any domain where you need causal reasoning you can trust and trace — where "the model said so" is not an acceptable justification.
 
 **6G network security.** A security analyst queries an incident knowledge graph:
 - *Level 1:* "Do signal anomalies co-occur with auth failures at node 7?" — SPARQL fact check.
@@ -107,16 +107,16 @@ CAVAL is useful in any domain where you need causal reasoning you can trust and 
 
 **Medical and clinical reasoning.** Feed clinical literature through the companion [causal-discovery](../causal-discovery) extractor to build a causal knowledge graph, then query it. Every accepted answer traces back to the source edge that supports it.
 
-**Policy and economic analysis.** Same architecture. The KB holds causal relationships extracted from policy documents; CAVAL answers intervention questions ("what is the effect of policy X on outcome Y?") without conflating correlation with causation.
+**Policy and economic analysis.** Same architecture. The KB holds causal relationships extracted from policy documents; CAUVAL answers intervention questions ("what is the effect of policy X on outcome Y?") without conflating correlation with causation.
 
-**Verified LLM pipelines.** Any application that uses an LLM to reason about a domain where you have structured causal knowledge. CAVAL sits between the LLM and the user, ensuring the model's causal claims are grounded before they are accepted.
+**Verified LLM pipelines.** Any application that uses an LLM to reason about a domain where you have structured causal knowledge. CAUVAL sits between the LLM and the user, ensuring the model's causal claims are grounded before they are accepted.
 
 ---
 
 ## Architecture
 
 ```
-caval/          Public library: Caval class, CAFPipeline
+cauval/         Public library: Cauval class, CAFPipeline
 api/            FastAPI gateway (POST /v1/infer) — same pipeline over HTTP
 modules/
   inference_engine/   LLM client (HTTP) and server (vLLM / HuggingFace 4-bit)
@@ -136,7 +136,7 @@ common/
 
 **Three entry points:**
 
-1. **`caval` library** (`from caval import Caval`) — `pip install caval`, talks to Fuseki and to a running inference-engine server over HTTP. The primary interface.
+1. **`cauval` library** (`from cauval import Cauval`) — `pip install cauval`, talks to Fuseki and to a running inference-engine server over HTTP. The primary interface.
 
 2. **FastAPI service** (`api/main.py`) — the same pipeline exposed as `POST /v1/infer`. Run with `uv run python -m api.main`.
 

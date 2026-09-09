@@ -7,8 +7,8 @@ Fuseki.
 
 import pytest
 
-from caval.exceptions import VerificationFailedError
-from caval.pipeline import CAFPipeline
+from cauval.exceptions import VerificationFailedError
+from cauval.pipeline import CAFPipeline
 from modules.causal_validator.validator import CausalValidator
 from modules.semantic_parser.parser import SemanticParser
 from modules.truth_anchor.causal_graph_builder import CausalGraphBuilder

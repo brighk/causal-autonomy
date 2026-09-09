@@ -1,4 +1,4 @@
-"""The public Caval client class."""
+"""The public Cauval client class."""
 
 import asyncio
 
@@ -13,7 +13,7 @@ from utils.config import Settings, get_settings
 from .pipeline import CAFPipeline
 
 
-class Caval:
+class Cauval:
     """
     Programmatic entry point to the CAF pipeline, built on the same
     api/+modules/ implementation as the FastAPI gateway.
@@ -26,9 +26,9 @@ class Caval:
     instance without touching the process-wide cached settings.
 
     Example:
-        from caval import Caval
+        from cauval import Cauval
 
-        caf = Caval()
+        caf = Cauval()
         result = caf.ask("Does high cpu usage cause increased response time?")
         print(result.text, result.verification_status.is_valid)
 
@@ -37,8 +37,8 @@ class Caval:
     would silently undermine what gets verified). Fuseki/inference-engine
     reachability failures surface as normal exceptions on the first
     .ask()/.aask() call, not at construction - probing them eagerly here
-    would make every Caval() block on a network round trip and would be
-    wrong for a Caval() constructed before the LLM server has finished
+    would make every Cauval() block on a network round trip and would be
+    wrong for a Cauval() constructed before the LLM server has finished
     starting up.
     """
 
@@ -98,7 +98,7 @@ class Caval:
         """
         Async-native version of .ask(), for embedding in an already-async
         app (e.g. a FastAPI route). Safe to call concurrently on the same
-        Caval instance.
+        Cauval instance.
         """
         # A fresh InferenceEngineClient per call, not shared on self: its
         # httpx.AsyncClient binds internal connection-pool state to the
@@ -147,13 +147,13 @@ class Caval:
         """
         return asyncio.run(self.aask(prompt, **kwargs))
 
-    def __enter__(self) -> "Caval":
+    def __enter__(self) -> "Cauval":
         return self
 
     def __exit__(self, *exc: object) -> None:
         pass
 
-    async def __aenter__(self) -> "Caval":
+    async def __aenter__(self) -> "Cauval":
         return self
 
     async def __aexit__(self, *exc: object) -> None:

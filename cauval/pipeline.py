@@ -1,7 +1,7 @@
 """
 The CAF generate -> parse -> verify -> constrain -> regenerate loop,
 extracted from api/main.py's POST /v1/infer handler so both the FastAPI
-gateway and caval's own Caval class run the exact same logic instead of two
+gateway and caval's own Cauval class run the exact same logic instead of two
 copies that can silently drift apart.
 
 Pearl's causal hierarchy routing:
@@ -28,7 +28,7 @@ class CAFPipeline:
 
     Takes already-constructed service instances rather than building them
     itself - callers (api/main.py's lifespan-managed singletons, or
-    caval.Caval's per-instance/per-call services) own construction and
+    cauval.Cauval's per-instance/per-call services) own construction and
     lifecycle.
 
     If causal_graph_builder is provided, interventional and counterfactual

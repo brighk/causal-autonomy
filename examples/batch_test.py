@@ -10,7 +10,7 @@ Edit PROMPTS below to add your own cases. Run with:
     uv run python -m examples.batch_test
 """
 
-from caval import Caval, VerificationFailedError
+from cauval import Cauval, VerificationFailedError
 
 # Matched to the k8s/microservices causal graph currently loaded in Fuseki
 # (see the real edges via the SPARQL query in the README/BACKLOG.md).
@@ -31,7 +31,7 @@ PROMPTS = [
 
 
 def main() -> None:
-    with Caval() as caf:
+    with Cauval() as caf:
         for prompt in PROMPTS:
             print("=" * 70)
             print("PROMPT:", prompt)

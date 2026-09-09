@@ -34,7 +34,7 @@ class CausalGraphBuilder:
     """
     Async SPARQL-backed builder for do-calculus CausalGraphs.
 
-    Constructed once per Caval/API instance (cheap — no eager I/O), then
+    Constructed once per Cauval/API instance (cheap — no eager I/O), then
     called per Level 2/3 query. Results are cached per unique sorted
     seed-text set so repeated calls within one refinement cycle (same
     prompt, same entity mentions) don't repeat the SPARQL traversal.
@@ -79,7 +79,9 @@ class CausalGraphBuilder:
                 break
             next_frontier: list[str] = []
             for uri in frontier:
-                for neighbor_uri, cause_uri, effect_uri in await self._causal_edges(uri):
+                for neighbor_uri, cause_uri, effect_uri in await self._causal_edges(
+                    uri
+                ):
                     cause_label = normalize_node_id(
                         await self._resolve_label(cause_uri) or cause_uri
                     )

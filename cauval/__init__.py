@@ -1,9 +1,9 @@
 """
 caval - Causal Autonomy Framework, as an importable library.
 
-    from caval import Caval
+    from cauval import Cauval
 
-    caf = Caval()
+    caf = Cauval()
     result = caf.ask("Does high cpu usage cause increased response time?")
     print(result.text, result.verification_status.is_valid)
 
@@ -15,13 +15,13 @@ and examples/quickstart.py):
 
 from api.models import FinalResponse, Triplet, VerificationResult
 
-from .core import Caval
+from .core import Cauval
 from .exceptions import VerificationFailedError
 
 __version__ = "0.1.1"
 
 __all__ = [
-    "Caval",
+    "Cauval",
     "FinalResponse",
     "Triplet",
     "VerificationResult",

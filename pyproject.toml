@@ -1,5 +1,5 @@
 [project]
-name = "caval"
+name = "cauval"
 version = "0.1.1"
 description = "Sovereign Agent with Deterministic Output via Causal Grounding"
 readme = "README.md"
@@ -16,14 +16,14 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 requires-python = ">=3.11"
-# Core: everything `caval.Caval` itself needs (parsing, entity linking,
+# Core: everything `cauval.Cauval` itself needs (parsing, entity linking,
 # SPARQL verification, config) - talks to Fuseki and to an already-running
 # inference engine over plain HTTP, so it needs neither a web framework nor
 # an ML stack. `common/llm_integration.py` and `modules/inference_engine/
 # engine.py` already degrade gracefully (try/except) when torch/
 # transformers/bitsandbytes/accelerate aren't installed - confirmed live by
-# simulating their absence - so a lean `pip install caval` genuinely works
-# without pulling in a multi-GB ML stack a caval-only consumer never needs.
+# simulating their absence - so a lean `pip install cauval` genuinely works
+# without pulling in a multi-GB ML stack a cauval-only consumer never needs.
 dependencies = [
     "fuzzywuzzy>=0.18.0",
     "httpx>=0.25.0",
@@ -39,7 +39,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # api/main.py's FastAPI gateway, if you want to run it as an HTTP service
-# instead of importing `caval` directly.
+# instead of importing `cauval` directly.
 api = [
     "fastapi>=0.115.0",
     "prometheus-client>=0.19.0",
@@ -48,7 +48,7 @@ api = [
 ]
 # modules/inference_engine/server.py's local model loading (the HF/4-bit
 # fallback path) - only needed if you're running your own inference
-# engine, not if you're pointing caval at someone else's.
+# engine, not if you're pointing cauval at someone else's.
 llm = [
     "accelerate>=0.25.0",
     "bitsandbytes>=0.43.0",
@@ -83,7 +83,7 @@ build-backend = "hatchling.build"
 # the repo root can accidentally end up published, without needing to
 # remember to exclude it.
 include = [
-    "/caval",
+    "/cauval",
     "/api",
     "/modules",
     "/utils",
@@ -94,16 +94,16 @@ include = [
 ]
 
 [tool.hatch.build.targets.wheel]
-# Flat repo layout: caval/ is the new public package; api/, modules/,
+# Flat repo layout: cauval/ is the new public package; api/, modules/,
 # utils/, common/, experiments/ are its pre-existing internals, still
 # importable as top-level packages in their own right (api/main.py, the
 # .vscode/launch.json debug configs, etc. all do `import modules.x`/
-# `import api.main` directly, not through caval). experiments/ ships
-# alongside the rest for anyone using this repo's non-caval entry points
+# `import api.main` directly, not through cauval). experiments/ ships
+# alongside the rest for anyone using this repo's non-cauval entry points
 # (experiments/run_query.py etc.) - common/llm_integration.py no longer
 # depends on it (InferenceLayer moved to common/inference_layer.py), so
-# caval's own import chain doesn't require experiments/ to be present.
-packages = ["caval", "api", "modules", "utils", "common", "experiments"]
+# cauval's own import chain doesn't require experiments/ to be present.
+packages = ["cauval", "api", "modules", "utils", "common", "experiments"]
 
 [tool.ruff]
 target-version = "py311"
@@ -119,11 +119,11 @@ dev = [
     "ruff==0.16.6",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
-    # spaCy model, not a runtime dependency of published `caval` - PyPI has
+    # spaCy model, not a runtime dependency of published `cauval` - PyPI has
     # no package literally named en-core-web-sm (confirmed: 404 on PyPI's
     # own index), and [tool.uv.sources] below is a uv-local resolution
     # override that does NOT get embedded in the wheel's published
-    # Requires-Dist - a real `pip install caval` or `uv add caval` from
+    # Requires-Dist - a real `pip install cauval` or `uv add cauval` from
     # another project would just fail trying to resolve it from PyPI.
     # Kept here so `uv sync` on this repo still auto-installs it for local
     # dev; anyone consuming the published package instead runs

@@ -5,7 +5,7 @@ from api.models import CausalAssertion, ResponseCandidate
 
 class StubInference:
     """
-    Duck-typed inference stub for CAFPipeline/Caval tests - only needs an
+    Duck-typed inference stub for CAFPipeline/Cauval tests - only needs an
     async .generate(request) -> ResponseCandidate method (CAFPipeline
     doesn't require a specific class, just this shape).
 

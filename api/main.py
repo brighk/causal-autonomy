@@ -12,8 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 from prometheus_fastapi_instrumentator import Instrumentator
 
-from caval.exceptions import VerificationFailedError
-from caval.pipeline import CAFPipeline
+from cauval.exceptions import VerificationFailedError
+from cauval.pipeline import CAFPipeline
 from modules.causal_validator.validator import CausalValidator
 from modules.inference_engine.client import InferenceEngineClient
 from modules.semantic_parser.parser import SemanticParser

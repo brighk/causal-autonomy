@@ -21,7 +21,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       # Lean install only (no --extra api/llm/experiments): none of the
-      # test suite needs fastapi/torch/transformers - caval talks to
+      # test suite needs fastapi/torch/transformers - cauval talks to
       # Fuseki and to an already-running inference engine over plain HTTP,
       # never in-process. Running the full suite against a lean install is
       # itself a regression test for that claim.
